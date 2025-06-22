@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Check } from "lucide-react";
@@ -35,8 +36,8 @@ export default function PricingCard({ tier, price, period, description, features
         </ul>
       </CardContent>
       <CardFooter>
-        <Button className="w-full" variant={isFeatured ? "default" : "outline"}>
-          Get Started
+        <Button className="w-full" asChild variant={isFeatured ? "default" : "outline"}>
+          <Link href="/register">Get Started</Link>
         </Button>
       </CardFooter>
     </Card>

@@ -64,7 +64,7 @@ export default function LandingPage() {
             </p>
             <div className="mt-8 flex justify-center gap-4">
               <Button asChild size="lg">
-                <Link href="#demo">Request a Demo</Link>
+                <Link href="/register">Get Started</Link>
               </Button>
               <Button asChild variant="outline" size="lg">
                 <Link href="#pricing">See Pricing</Link>
@@ -153,15 +153,15 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section id="demo" className="py-20 sm:py-32 text-center">
+        <section id="get-started" className="py-20 sm:py-32 text-center">
           <div className="container">
-            <h2 className="text-3xl font-bold tracking-tight sm:text-4xl font-headline">Ready to See It in Action?</h2>
+            <h2 className="text-3xl font-bold tracking-tight sm:text-4xl font-headline">Ready to Get Started?</h2>
             <p className="mx-auto mt-4 max-w-xl text-lg text-muted-foreground">
-              Schedule a personalized demo with one of our experts to see how Cloud Morphix can transform your business.
+              Create an account today and start transforming your data into actionable insights. No credit card required.
             </p>
             <div className="mt-8">
               <Button asChild size="lg">
-                <Link href="#">Request a Demo</Link>
+                <Link href="/register">Sign Up Now</Link>
               </Button>
             </div>
           </div>

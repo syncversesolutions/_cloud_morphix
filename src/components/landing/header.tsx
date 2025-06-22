@@ -6,12 +6,12 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Menu, Cloud } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 const navLinks = [
   { href: "#features", label: "Features" },
   { href: "#pricing", label: "Pricing" },
-  { href: "#demo", label: "Demo" },
+  { href: "#get-started", label: "Get Started" },
 ];
 
 export default function LandingHeader() {
@@ -22,7 +22,7 @@ export default function LandingHeader() {
   const handleLinkClick = () => {
     setSheetOpen(false);
   };
-  
+
   const NavContent = () => (
     <>
       {navLinks.map((link) => (
@@ -45,7 +45,7 @@ export default function LandingHeader() {
           <Cloud className="h-6 w-6 text-primary" />
           <span className="font-bold text-lg font-headline">Cloud Morphix</span>
         </Link>
-        
+
         {isMobile ? (
           <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
             <SheetTrigger asChild>
@@ -55,24 +55,52 @@ export default function LandingHeader() {
               </Button>
             </SheetTrigger>
             <SheetContent side="right">
-              <nav className="flex flex-col gap-6 mt-8">
-                <NavContent />
-                <Button asChild>
-                  <Link href={user ? "/dashboard" : "/login"}>
-                    {user ? "Go to Dashboard" : "Login"}
-                  </Link>
-                </Button>
+              <nav className="flex h-full flex-col">
+                <div className="flex flex-col gap-6 mt-8">
+                  <NavContent />
+                </div>
+                <div className="mt-auto flex flex-col gap-4 pb-8">
+                  {user ? (
+                    <Button asChild>
+                      <Link href="/dashboard" onClick={handleLinkClick}>
+                        Go to Dashboard
+                      </Link>
+                    </Button>
+                  ) : (
+                    <>
+                      <Button asChild variant="outline">
+                        <Link href="/login" onClick={handleLinkClick}>
+                          Login
+                        </Link>
+                      </Button>
+                      <Button asChild>
+                        <Link href="/register" onClick={handleLinkClick}>
+                          Register
+                        </Link>
+                      </Button>
+                    </>
+                  )}
+                </div>
               </nav>
             </SheetContent>
           </Sheet>
         ) : (
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
             <NavContent />
-            <Button asChild>
-              <Link href={user ? "/dashboard" : "/login"}>
-                {user ? "Dashboard" : "Login"}
-              </Link>
-            </Button>
+            {user ? (
+              <Button asChild>
+                <Link href="/dashboard">Dashboard</Link>
+              </Button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Button asChild variant="ghost">
+                  <Link href="/login">Login</Link>
+                </Button>
+                <Button asChild>
+                  <Link href="/register">Register</Link>
+                </Button>
+              </div>
+            )}
           </nav>
         )}
       </div>

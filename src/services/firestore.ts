@@ -12,7 +12,7 @@ export async function getDashboardUrl(uid: string): Promise<string | null> {
             const companySnap = await getDoc(companyRef);
             if (companySnap.exists()) {
                 const companyData = companySnap.data();
-                return companyData.embedUrl || null;
+                return companyData.lookerUrl || null;
             }
         }
         return null;
@@ -21,7 +21,7 @@ export async function getDashboardUrl(uid: string): Promise<string | null> {
         const oldDashboardRef = doc(db, "dashboards", uid);
         const oldDashboardSnap = await getDoc(oldDashboardRef);
         if (oldDashboardSnap.exists()) {
-            return oldDashboardSnap.data().embedUrl || null;
+            return oldDashboardSnap.data().lookerUrl || null;
         }
         return null;
     }
@@ -53,7 +53,7 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
         created_at: serverTimestamp(),
         plan_type: "Trial",
         subscription_status: "Active",
-        embedUrl: null, // Placeholder for dashboard embed URL
+        lookerUrl: null, // Placeholder for dashboard Looker URL
     });
 
     batch.set(userRef, {

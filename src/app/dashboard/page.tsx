@@ -35,7 +35,7 @@ export default function DashboardPage() {
             const finalUrl = `${baseUrl}?params=${encodeURIComponent(params)}`;
             setDashboardUrl(finalUrl);
           } else {
-             setError("No dashboard configuration found for your company, or the embed URL is missing from your company's document in Firestore.");
+             setError("No dashboard configuration found for your company, or the Looker URL is missing from your company's document in Firestore.");
           }
         } catch (err) {
           setError("Failed to fetch dashboard configuration. Please check the console for details.");

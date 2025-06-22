@@ -1,18 +1,18 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Allow any authenticated user to create a company or user document.
-    // This is required for the registration flow to work.
+    // Allow any authenticated user to create a company.
     match /companies/{companyId} {
       allow create: if request.auth != null;
-      // Allow authenticated users to read company info (e.g., to verify a company ID exists)
-      allow read: if request.auth != null;
+      // Once created, only let users associated with that company read it.
+      allow read: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.company_id == companyId;
     }
 
+    // Allow any authenticated user to create their own user document.
     match /users/{userId} {
-      allow create: if request.auth != null;
-      // A user can only read or update their own document after it's created.
+      allow create: if request.auth != null && request.auth.uid == userId;
+      // Allow users to read and update their own document.
       allow read, update: if request.auth != null && request.auth.uid == userId;
     }
   }

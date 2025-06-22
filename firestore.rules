@@ -1,11 +1,21 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // This rule allows anyone to read and write to any document in your database.
-    // This is for development purposes only.
-    // Secure your database before deploying to production!
-    match /{document=**} {
-      allow read, write: if true;
+
+    // Allow any authenticated user to create a company.
+    // An existing user can only update a company if they are an admin for that company.
+    match /companies/{companyId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.company_id == companyId && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Admin';
+    }
+
+    // A user can create their own user document.
+    // A user can always read or update their own data.
+    match /users/{userId} {
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow read, update: if request.auth != null && request.auth.uid == userId;
     }
   }
 }

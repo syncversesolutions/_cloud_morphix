@@ -218,14 +218,14 @@ export default function CompanyRegistrationForm() {
                 <div className="h-5 w-5 animate-spin rounded-full border-2 border-solid border-background border-t-transparent"></div>
               ) : "Create Company Account"}
             </Button>
-             <div className="text-sm md:col-span-2 text-center mt-2">
+            <div className="text-sm md:col-span-2 text-center mt-2">
                 <p className="text-muted-foreground">
-                  Joining an existing company?{" "}
-                  <Link href="/register/user" className="font-medium text-primary hover:underline">
-                    Register as a user
+                  Already have an account?{" "}
+                  <Link href="/login" className="font-medium text-primary hover:underline">
+                    Login here
                   </Link>
                 </p>
-              </div>
+            </div>
           </form>
         </Form>
       </CardContent>

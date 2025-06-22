@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { LogIn } from "lucide-react";
+import Link from "next/link";
 
 const formSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email." }),
@@ -102,6 +103,14 @@ export default function LoginForm() {
             </Button>
           </form>
         </Form>
+        <div className="mt-4 text-center text-sm">
+          <p className="text-muted-foreground">
+            Don't have an account?{" "}
+            <Link href="/register" className="font-medium text-primary hover:underline">
+              Register
+            </Link>
+          </p>
+        </div>
       </CardContent>
     </Card>
   );

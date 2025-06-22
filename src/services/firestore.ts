@@ -1,30 +1,37 @@
-import { doc, getDoc, setDoc, serverTimestamp, collection, writeBatch } from "firebase/firestore";
+import { doc, getDoc, setDoc, serverTimestamp, collection, writeBatch, query, where, getDocs, addDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
-export async function getDashboardUrl(uid: string): Promise<string | null> {
+export interface UserProfile {
+    user_id: string;
+    full_name: string;
+    email: string;
+    company_id: string;
+    role: "Admin" | "Analyst" | "Viewer" | string; // Allow for custom roles
+    created_at: any;
+}
+
+export async function getUserProfile(uid: string): Promise<UserProfile | null> {
     const userRef = doc(db, "users", uid);
     const userSnap = await getDoc(userRef);
 
     if (userSnap.exists()) {
-        const userData = userSnap.data();
-        if(userData.company_id) {
-            const companyRef = doc(db, "companies", userData.company_id);
-            const companySnap = await getDoc(companyRef);
-            if (companySnap.exists()) {
-                const companyData = companySnap.data();
-                return companyData.lookerUrl || null;
-            }
-        }
-        return null;
-    } else {
-        // Fallback for old data model, can be removed later
-        const oldDashboardRef = doc(db, "dashboards", uid);
-        const oldDashboardSnap = await getDoc(oldDashboardRef);
-        if (oldDashboardSnap.exists()) {
-            return oldDashboardSnap.data().lookerUrl || null;
-        }
-        return null;
+        return userSnap.data() as UserProfile;
     }
+    return null;
+}
+
+export async function getDashboardUrl(uid: string): Promise<string | null> {
+    const userProfile = await getUserProfile(uid);
+
+    if (userProfile && userProfile.company_id) {
+        const companyRef = doc(db, "companies", userProfile.company_id);
+        const companySnap = await getDoc(companyRef);
+        if (companySnap.exists()) {
+            const companyData = companySnap.data();
+            return companyData.lookerUrl || null;
+        }
+    }
+    return null;
 }
 
 interface CompanyData {
@@ -44,6 +51,7 @@ interface AdminData {
 export async function createCompanyAndAdmin({ companyData, adminData }: { companyData: CompanyData, adminData: AdminData }): Promise<void> {
     const companyRef = doc(collection(db, "companies"));
     const userRef = doc(db, "users", adminData.uid);
+    const adminRoleRef = doc(db, "companies", companyRef.id, "roles", "admin");
 
     const batch = writeBatch(db);
 
@@ -53,7 +61,7 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
         created_at: serverTimestamp(),
         plan_type: "Trial",
         subscription_status: "Active",
-        lookerUrl: null, // Placeholder for dashboard Looker URL
+        lookerUrl: null,
     });
 
     batch.set(userRef, {
@@ -64,6 +72,11 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
         role: "Admin",
         created_at: serverTimestamp(),
     });
+    
+    // Add default roles
+    batch.set(doc(db, "companies", companyRef.id, "roles", "admin-role"), { name: "Admin", created_at: serverTimestamp() });
+    batch.set(doc(db, "companies", companyRef.id, "roles", "analyst-role"), { name: "Analyst", created_at: serverTimestamp() });
+    batch.set(doc(db, "companies", companyRef.id, "roles", "viewer-role"), { name: "Viewer", created_at: serverTimestamp() });
 
     await batch.commit();
 }
@@ -74,7 +87,7 @@ interface UserData {
     fullName: string;
     email: string;
     companyId: string;
-    role: "Admin" | "Analyst" | "Viewer";
+    role: "Admin" | "Analyst" | "Viewer" | string;
 }
 
 export async function createUserUnderCompany(userData: UserData): Promise<void> {
@@ -95,6 +108,51 @@ export async function createUserUnderCompany(userData: UserData): Promise<void> 
         email: userData.email,
         company_id: userData.companyId,
         role: userData.role,
+        created_at: serverTimestamp(),
+    });
+}
+
+// --- New Functions for User/Role Management ---
+
+export async function getCompanyUsers(companyId: string): Promise<UserProfile[]> {
+    const usersRef = collection(db, "users");
+    const q = query(usersRef, where("company_id", "==", companyId));
+    const querySnapshot = await getDocs(q);
+    
+    const users: UserProfile[] = [];
+    querySnapshot.forEach((doc) => {
+        users.push(doc.data() as UserProfile);
+    });
+    return users;
+}
+
+export async function getCompanyRoles(companyId: string): Promise<string[]> {
+    const rolesRef = collection(db, "companies", companyId, "roles");
+    const querySnapshot = await getDocs(rolesRef);
+
+    const roles: string[] = [];
+    querySnapshot.forEach((doc) => {
+        roles.push(doc.data().name);
+    });
+    return roles.sort();
+}
+
+export async function addRole(companyId: string, roleName: string): Promise<void> {
+    const rolesRef = collection(db, "companies", companyId, "roles");
+    await addDoc(rolesRef, {
+        name: roleName,
+        created_at: serverTimestamp(),
+    });
+}
+
+export async function createInvite(companyId: string, email: string, fullName: string, role: string): Promise<void> {
+    const invitesRef = collection(db, "invites");
+    await addDoc(invitesRef, {
+        company_id: companyId,
+        email,
+        full_name: fullName,
+        role,
+        status: "pending",
         created_at: serverTimestamp(),
     });
 }

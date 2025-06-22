@@ -29,6 +29,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
+import { CheckCircle2, XCircle } from "lucide-react";
 
 const formSchema = z.object({
   companyName: z.string().min(2, { message: "Company name must be at least 2 characters." }),
@@ -36,7 +37,16 @@ const formSchema = z.object({
   industry: z.string().min(1, { message: "Please select an industry." }),
   companySize: z.string().min(1, { message: "Please select a company size." }),
   email: z.string().email({ message: "Please enter a valid email." }),
-  password: z.string().min(6, { message: "Password must be at least 6 characters." }),
+  password: z.string().refine(password => {
+    const hasUppercase = /[A-Z]/.test(password);
+    const hasLowercase = /[a-z]/.test(password);
+    const hasNumber = /\d/.test(password);
+    const hasSpecialChar = /[@$!%*?&]/.test(password);
+    const hasValidLength = password.length >= 8 && password.length <= 16;
+    return hasUppercase && hasLowercase && hasNumber && hasSpecialChar && hasValidLength;
+  }, {
+    message: "Please ensure your password meets all the security requirements."
+  }),
   phone: z.string().min(10, { message: "Please enter a valid phone number." }),
 });
 
@@ -44,9 +54,19 @@ export default function CompanyRegistrationForm() {
   const router = useRouter();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [password, setPassword] = useState("");
+
+  const passwordChecks = [
+    { label: "8-16 characters long", satisfied: password.length >= 8 && password.length <= 16 },
+    { label: "At least one uppercase letter (A-Z)", satisfied: /[A-Z]/.test(password) },
+    { label: "At least one lowercase letter (a-z)", satisfied: /[a-z]/.test(password) },
+    { label: "At least one number (0-9)", satisfied: /[0-9]/.test(password) },
+    { label: "At least one special character (@, $, !, %, *, ?, &)", satisfied: /[@$!%*?&]/.test(password) },
+  ];
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
+    mode: "onTouched",
     defaultValues: {
       companyName: "",
       adminFullName: "",
@@ -207,9 +227,31 @@ export default function CompanyRegistrationForm() {
                 <FormItem className="md:col-span-2">
                   <FormLabel>Password</FormLabel>
                   <FormControl>
-                    <Input type="password" placeholder="••••••••" {...field} />
+                    <Input 
+                      type="password" 
+                      placeholder="••••••••" 
+                      {...field}
+                      onChange={(e) => {
+                        field.onChange(e.target.value);
+                        setPassword(e.target.value);
+                      }}
+                     />
                   </FormControl>
                   <FormMessage />
+                  <div className="space-y-1 pt-2">
+                    {passwordChecks.map((check, index) => (
+                      <div key={index} className="flex items-center text-sm">
+                        {check.satisfied ? (
+                           <CheckCircle2 className="mr-2 h-4 w-4 text-green-500" />
+                        ) : (
+                          <XCircle className="mr-2 h-4 w-4 text-muted-foreground" />
+                        )}
+                        <span className={check.satisfied ? 'text-foreground' : 'text-muted-foreground'}>
+                          {check.label}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </FormItem>
               )}
             />

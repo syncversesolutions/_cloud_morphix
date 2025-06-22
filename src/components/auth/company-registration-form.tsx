@@ -32,6 +32,7 @@ import Link from "next/link";
 
 const formSchema = z.object({
   companyName: z.string().min(2, { message: "Company name must be at least 2 characters." }),
+  adminFullName: z.string().min(2, { message: "Your name must be at least 2 characters." }),
   industry: z.string().min(1, { message: "Please select an industry." }),
   companySize: z.string().min(1, { message: "Please select a company size." }),
   email: z.string().email({ message: "Please enter a valid email." }),
@@ -48,6 +49,7 @@ export default function CompanyRegistrationForm() {
     resolver: zodResolver(formSchema),
     defaultValues: {
       companyName: "",
+      adminFullName: "",
       industry: "",
       companySize: "",
       email: "",
@@ -73,7 +75,7 @@ export default function CompanyRegistrationForm() {
         adminData: {
           uid: user.uid,
           email: values.email,
-          fullName: "Company Admin", // Default name for the first user
+          fullName: values.adminFullName,
         },
       });
 
@@ -93,7 +95,7 @@ export default function CompanyRegistrationForm() {
     <Card className="w-full max-w-2xl">
       <CardHeader>
         <CardTitle className="text-2xl font-headline">Register Your Company</CardTitle>
-        <CardDescription>Create your company's account to get started.</CardDescription>
+        <CardDescription>Create your company's account and admin user to get started.</CardDescription>
       </CardHeader>
       <CardContent>
         <Form {...form}>
@@ -106,6 +108,19 @@ export default function CompanyRegistrationForm() {
                   <FormLabel>Company Name</FormLabel>
                   <FormControl>
                     <Input placeholder="Acme Inc." {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="adminFullName"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Your Full Name</FormLabel>
+                  <FormControl>
+                    <Input placeholder="John Doe" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -172,11 +187,11 @@ export default function CompanyRegistrationForm() {
                 </FormItem>
               )}
             />
-            <FormField
+             <FormField
               control={form.control}
               name="email"
               render={({ field }) => (
-                <FormItem className="md:col-span-2">
+                <FormItem>
                   <FormLabel>Company Admin Email</FormLabel>
                   <FormControl>
                     <Input placeholder="admin@example.com" {...field} />

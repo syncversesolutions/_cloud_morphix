@@ -4,8 +4,8 @@ import { AuthProvider } from '@/context/auth-context';
 import { Toaster } from '@/components/ui/toaster';
 
 export const metadata: Metadata = {
-  title: 'LookerLink',
-  description: 'Embed Looker Studio dashboards with Firebase Authentication.',
+  title: 'Cloud Morphix',
+  description: 'Welcome to Cloud Morphix.',
 };
 
 export default function RootLayout({

@@ -3,12 +3,13 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyB04ocOZTZesgrOqS126hL1ALu5QmZuoe0",
+  authDomain: "cloudmorphix-602b1.firebaseapp.com",
+  projectId: "cloudmorphix-602b1",
+  storageBucket: "cloudmorphix-602b1.appspot.com",
+  messagingSenderId: "115572239201",
+  appId: "1:115572239201:web:1671fe090cf49dd362f320",
+  measurementId: "G-RJW8F0RYX2"
 };
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();

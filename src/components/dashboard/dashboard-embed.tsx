@@ -20,7 +20,7 @@ export default function DashboardEmbed({ url }: DashboardEmbedProps) {
             className="h-full w-full border-0"
             allowFullScreen
             sandbox="allow-storage-access-by-user-activation allow-scripts allow-same-origin allow-forms allow-popups"
-            title="Dashboard"
+            title="Cloud Morphix Dashboard"
           ></iframe>
         </div>
       </CardContent>

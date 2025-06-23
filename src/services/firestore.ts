@@ -13,7 +13,6 @@ export interface UserProfile {
 
 export interface Invite {
     invite_id: string;
-    company_id: string;
     email: string;
     full_name: string;
     role: string;
@@ -133,8 +132,8 @@ export async function getCompanyUsers(companyId: string): Promise<UserProfile[]>
 }
 
 export async function getCompanyInvites(companyId: string): Promise<Invite[]> {
-    const invitesRef = collection(db, "invites");
-    const q = query(invitesRef, where("company_id", "==", companyId), where("status", "==", "pending"));
+    const invitesRef = collection(db, "companies", companyId, "invites");
+    const q = query(invitesRef, where("status", "==", "pending"));
     const querySnapshot = await getDocs(q);
     
     const invites: Invite[] = [];
@@ -153,7 +152,9 @@ export async function getCompanyRoles(companyId: string): Promise<string[]> {
     querySnapshot.forEach((doc) => {
         roles.push(doc.data().name);
     });
-    return [...new Set(roles)].sort();
+    // Remove duplicates before returning
+    const uniqueRoles = [...new Set(roles)];
+    return uniqueRoles.sort();
 }
 
 export async function addRole(companyId: string, roleName: string): Promise<void> {
@@ -165,9 +166,8 @@ export async function addRole(companyId: string, roleName: string): Promise<void
 }
 
 export async function createInvite(companyId: string, email: string, fullName: string, role: string): Promise<void> {
-    const invitesRef = collection(db, "invites");
+    const invitesRef = collection(db, "companies", companyId, "invites");
     await addDoc(invitesRef, {
-        company_id: companyId,
         email,
         full_name: fullName,
         role,

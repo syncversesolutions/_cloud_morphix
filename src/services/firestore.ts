@@ -11,6 +11,16 @@ export interface UserProfile {
     created_at: any;
 }
 
+export interface Invite {
+    invite_id: string;
+    company_id: string;
+    email: string;
+    full_name: string;
+    role: string;
+    status: "pending" | "accepted";
+    created_at: any;
+}
+
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
     const userRef = doc(db, "users", uid);
     const userSnap = await getDoc(userRef);
@@ -122,6 +132,19 @@ export async function getCompanyUsers(companyId: string): Promise<UserProfile[]>
     return users;
 }
 
+export async function getCompanyInvites(companyId: string): Promise<Invite[]> {
+    const invitesRef = collection(db, "invites");
+    const q = query(invitesRef, where("company_id", "==", companyId), where("status", "==", "pending"));
+    const querySnapshot = await getDocs(q);
+    
+    const invites: Invite[] = [];
+    querySnapshot.forEach((doc) => {
+        invites.push({ invite_id: doc.id, ...doc.data() } as Invite);
+    });
+    return invites;
+}
+
+
 export async function getCompanyRoles(companyId: string): Promise<string[]> {
     const rolesRef = collection(db, "companies", companyId, "roles");
     const querySnapshot = await getDocs(rolesRef);
@@ -130,7 +153,7 @@ export async function getCompanyRoles(companyId: string): Promise<string[]> {
     querySnapshot.forEach((doc) => {
         roles.push(doc.data().name);
     });
-    return roles.sort();
+    return [...new Set(roles)].sort();
 }
 
 export async function addRole(companyId: string, roleName: string): Promise<void> {
@@ -154,9 +177,13 @@ export async function createInvite(companyId: string, email: string, fullName: s
 }
 
 export async function createInitialAdminRole(companyId: string): Promise<void> {
-    const rolesRef = collection(db, "companies", companyId, "roles");
-    await addDoc(rolesRef, {
-        name: "Admin",
-        created_at: serverTimestamp(),
-    });
+    const adminRoleQuery = query(collection(db, "companies", companyId, "roles"), where("name", "==", "Admin"));
+    const existingAdminRole = await getDocs(adminRoleQuery);
+    if(existingAdminRole.empty) {
+        const rolesRef = collection(db, "companies", companyId, "roles");
+        await addDoc(rolesRef, {
+            name: "Admin",
+            created_at: serverTimestamp(),
+        });
+    }
 }

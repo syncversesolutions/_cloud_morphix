@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useAuth, type UserProfile } from "@/hooks/use-auth";
-import { getCompanyUsers, getCompanyRoles, addRole, createInvite, createInitialAdminRole } from "@/services/firestore";
+import { getCompanyUsers, getCompanyRoles, addRole, createInvite, createInitialAdminRole, getCompanyInvites, type Invite } from "@/services/firestore";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -18,6 +18,7 @@ export default function UserManagementPage() {
   const { userProfile, loading: authLoading } = useAuth();
   const { toast } = useToast();
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [invites, setInvites] = useState<Invite[]>([]);
   const [roles, setRoles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [isRolesDialogOpen, setIsRolesDialogOpen] = useState(false);
@@ -29,22 +30,24 @@ export default function UserManagementPage() {
     if (!companyId) return;
     setLoading(true);
     try {
-      const [fetchedUsers, fetchedRoles] = await Promise.all([
+      const [fetchedUsers, fetchedRoles, fetchedInvites] = await Promise.all([
         getCompanyUsers(companyId),
         getCompanyRoles(companyId),
+        getCompanyInvites(companyId),
       ]);
 
-      if (fetchedRoles.length === 0) {
-        // This is a first-time setup for the company, create the initial Admin role.
+      let currentRoles = fetchedRoles;
+      if (currentRoles.length === 0) {
         await createInitialAdminRole(companyId);
-        const newRoles = await getCompanyRoles(companyId); // Re-fetch roles
-        setUsers(fetchedUsers);
-        setRoles([...new Set(newRoles)]);
-      } else {
-         setUsers(fetchedUsers);
-         setRoles([...new Set(fetchedRoles)]);
+        currentRoles = await getCompanyRoles(companyId); 
       }
+      
+      setUsers(fetchedUsers);
+      setInvites(fetchedInvites);
+      setRoles(currentRoles);
+
     } catch (error) {
+      console.error("Failed to fetch data:", error);
       toast({
         variant: "destructive",
         title: "Error",
@@ -87,7 +90,7 @@ export default function UserManagementPage() {
     try {
       await createInvite(companyId, email, fullName, role);
       toast({ title: "Success", description: `Invitation sent to ${email}.` });
-      // The user won't appear in the list until they register, so no need to refetch users here.
+      fetchUsersAndRoles(); // Refetch to show the new invite in the list
       return true;
     } catch (error) {
       toast({ variant: "destructive", title: "Error", description: "Failed to send invitation." });
@@ -107,6 +110,11 @@ export default function UserManagementPage() {
       </div>
     );
   }
+  
+  const allTeamMembers = [
+    ...users.map(u => ({...u, type: 'user' as const, id: u.user_id })),
+    ...invites.map(i => ({...i, type: 'invite' as const, id: i.invite_id}))
+  ].sort((a, b) => a.full_name.localeCompare(b.full_name));
 
   return (
     <div className="container mx-auto p-4 sm:p-6 lg:p-8">
@@ -130,7 +138,7 @@ export default function UserManagementPage() {
       <Card>
         <CardHeader>
           <CardTitle>Company Users</CardTitle>
-          <CardDescription>A list of all users in your company.</CardDescription>
+          <CardDescription>A list of all users in your company, including pending invitations.</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -138,17 +146,21 @@ export default function UserManagementPage() {
               <TableRow>
                 <TableHead>Full Name</TableHead>
                 <TableHead>Email</TableHead>
-                <TableHead>Role</TableHead>
+                <TableHead>Status / Role</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {users.length > 0 ? (
-                users.map((user) => (
-                  <TableRow key={user.user_id}>
-                    <TableCell className="font-medium">{user.full_name}</TableCell>
-                    <TableCell>{user.email}</TableCell>
+              {allTeamMembers.length > 0 ? (
+                allTeamMembers.map((member) => (
+                  <TableRow key={member.id}>
+                    <TableCell className="font-medium">{member.full_name}</TableCell>
+                    <TableCell>{member.email}</TableCell>
                     <TableCell>
-                      <Badge variant={user.role === 'Admin' ? 'default' : 'secondary'}>{user.role}</Badge>
+                      {member.type === 'user' ? (
+                        <Badge variant={member.role === 'Admin' ? 'default' : 'secondary'}>{member.role}</Badge>
+                      ) : (
+                        <Badge variant="outline">Pending Invitation</Badge>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))

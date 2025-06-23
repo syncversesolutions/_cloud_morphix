@@ -51,7 +51,6 @@ interface AdminData {
 export async function createCompanyAndAdmin({ companyData, adminData }: { companyData: CompanyData, adminData: AdminData }): Promise<void> {
     const companyRef = doc(collection(db, "companies"));
     const userRef = doc(db, "users", adminData.uid);
-    const adminRoleRef = doc(db, "companies", companyRef.id, "roles", "admin");
 
     const batch = writeBatch(db);
 
@@ -73,11 +72,7 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
         created_at: serverTimestamp(),
     });
     
-    // Add default roles
-    batch.set(doc(db, "companies", companyRef.id, "roles", "admin-role"), { name: "Admin", created_at: serverTimestamp() });
-    batch.set(doc(db, "companies", companyRef.id, "roles", "analyst-role"), { name: "Analyst", created_at: serverTimestamp() });
-    batch.set(doc(db, "companies", companyRef.id, "roles", "viewer-role"), { name: "Viewer", created_at: serverTimestamp() });
-
+    // Default roles are now created on the first visit to the user management page.
     await batch.commit();
 }
 
@@ -155,4 +150,15 @@ export async function createInvite(companyId: string, email: string, fullName: s
         status: "pending",
         created_at: serverTimestamp(),
     });
+}
+
+export async function createDefaultRoles(companyId: string): Promise<void> {
+    const batch = writeBatch(db);
+    const rolesRef = collection(db, "companies", companyId, "roles");
+    
+    batch.set(doc(rolesRef), { name: "Admin", created_at: serverTimestamp() });
+    batch.set(doc(rolesRef), { name: "Analyst", created_at: serverTimestamp() });
+    batch.set(doc(rolesRef), { name: "Viewer", created_at: serverTimestamp() });
+
+    await batch.commit();
 }

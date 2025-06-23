@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useAuth, type UserProfile } from "@/hooks/use-auth";
-import { getCompanyUsers, getCompanyRoles, addRole, createInvite } from "@/services/firestore";
+import { getCompanyUsers, getCompanyRoles, addRole, createInvite, createDefaultRoles } from "@/services/firestore";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -32,8 +32,17 @@ export default function UserManagementPage() {
         getCompanyUsers(companyId),
         getCompanyRoles(companyId),
       ]);
-      setUsers(fetchedUsers);
-      setRoles(fetchedRoles);
+
+      if (fetchedRoles.length === 0) {
+        // This is a first-time setup for the company, create default roles.
+        await createDefaultRoles(companyId);
+        const newRoles = await getCompanyRoles(companyId); // Re-fetch roles
+        setUsers(fetchedUsers);
+        setRoles(newRoles);
+      } else {
+         setUsers(fetchedUsers);
+         setRoles(fetchedRoles);
+      }
     } catch (error) {
       toast({
         variant: "destructive",

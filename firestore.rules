@@ -4,45 +4,41 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    function isAuthed() {
-      return request.auth != null;
-    }
-
-    function isAdmin(companyId) {
-      return isAuthed() 
-             && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Admin"
-             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.company_id == companyId;
-    }
-    
-    match /users/{userId} {
-      allow get: if isAuthed() && request.auth.uid == userId;
-      // Allow admins to list users in their own company.
-      // The client-side code is responsible for filtering by the correct companyId.
-      allow list: if isAuthed() 
-                  && exists(/databases/$(database)/documents/users/$(request.auth.uid)) 
-                  && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Admin";
-      allow create: if true;
+    function isCompanyAdmin(companyId) {
+      // Check if the user is an admin of the specified company.
+      let userProfile = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return userProfile.company_id == companyId && userProfile.role == "Admin";
     }
 
     match /companies/{companyId} {
-      allow get: if isAuthed() 
-                 && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-                 && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.company_id == companyId;
-      allow create, update: if isAdmin(companyId);
-
+      // Allow anyone with a direct link to get a company document (for the invite page)
+      // but do not allow listing all companies.
+      allow get: if true;
+      allow list: if false; // Explicitly deny listing
+      
       match /roles/{roleId} {
-        allow get, list, create, delete: if isAdmin(companyId);
+        allow get, list, create: if isCompanyAdmin(companyId);
       }
       
       match /invites/{inviteId} {
-        // Anyone with a direct link can read an invitation to sign up.
-        allow get: if true;
-        // Admins can manage invites.
-        allow list, create: if isAdmin(companyId);
-        // The invited user can update their own invitation to 'accepted' after signing up.
-        allow update: if isAuthed() && request.auth.token.email == resource.data.email;
+        // Anyone with the link can read the specific invite details
+        allow get: if true; 
+        allow list, create: if isCompanyAdmin(companyId);
+        // The authenticated user who was invited can update the status
+        allow update: if request.auth.uid != null 
+                       && resource.data.email == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email;
       }
+    }
+
+    match /users/{userId} {
+      // A user can read their own profile. An admin can read profiles of users in their company.
+      allow get: if request.auth.uid == userId || isCompanyAdmin(get(/databases/$(database)/documents/users/$(userId)).data.company_id);
+      // An admin can list all users in their company (client-side query enforces company_id).
+      allow list: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Admin";
+      // Allow user creation during signup or invite acceptance.
+      allow create;
+      // Allow a user to update their own profile.
+      allow update: if request.auth.uid == userId;
     }
   }
 }

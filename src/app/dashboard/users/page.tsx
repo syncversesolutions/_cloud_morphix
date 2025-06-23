@@ -38,10 +38,10 @@ export default function UserManagementPage() {
         await createDefaultRoles(companyId);
         const newRoles = await getCompanyRoles(companyId); // Re-fetch roles
         setUsers(fetchedUsers);
-        setRoles(newRoles);
+        setRoles([...new Set(newRoles)]);
       } else {
          setUsers(fetchedUsers);
-         setRoles(fetchedRoles);
+         setRoles([...new Set(fetchedRoles)]);
       }
     } catch (error) {
       toast({

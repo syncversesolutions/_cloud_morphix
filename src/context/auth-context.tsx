@@ -5,7 +5,6 @@ import { onAuthStateChanged } from "firebase/auth";
 import { createContext, useEffect, useState, type ReactNode } from "react";
 import { auth } from "@/lib/firebase";
 import { getUserProfile, type UserProfile } from "@/services/firestore";
-import LoadingSpinner from "@/components/loading-spinner";
 
 interface AuthContextType {
   user: User | null;
@@ -48,7 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider value={value}>
-      {loading ? <LoadingSpinner /> : children}
+      {children}
     </AuthContext.Provider>
   );
 }

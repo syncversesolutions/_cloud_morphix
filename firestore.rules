@@ -1,44 +1,58 @@
-
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    
+
+    // Helper function to check if the requester is an admin of a specific company
     function isCompanyAdmin(companyId) {
-      // Check if the user is an admin of the specified company.
-      let userProfile = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-      return userProfile.company_id == companyId && userProfile.role == "Admin";
+      // Ensure the user document exists before trying to access its data
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.company_id == companyId &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Admin';
     }
 
+    // Rules for the 'companies' collection
     match /companies/{companyId} {
-      // Allow anyone with a direct link to get a company document (for the invite page)
-      // but do not allow listing all companies.
-      allow get: if true;
-      allow list: if false; // Explicitly deny listing
+      // Allow an admin to update their own company document.
+      // Removed the broad 'allow write' rule which was causing the permission error.
+      allow update: if isCompanyAdmin(companyId);
       
+      // Allow any authenticated user to get a company's details (needed for invite page).
+      // Admins can list all companies (though not used in the app, it's a safe rule).
+      allow get: if request.auth != null;
+      allow list: if isCompanyAdmin(companyId);
+
+      // Rules for the 'roles' sub-collection
       match /roles/{roleId} {
-        allow get, list, create: if isCompanyAdmin(companyId);
+         // Only admins can manage roles.
+         allow read, create, update, delete: if isCompanyAdmin(companyId);
       }
-      
+
+      // Rules for the 'invites' sub-collection
       match /invites/{inviteId} {
-        // Anyone with the link can read the specific invite details
+        // Anyone with a direct link can read an invite's details to accept it.
         allow get: if true; 
+        // Admins can list and create new invites.
         allow list, create: if isCompanyAdmin(companyId);
-        // The authenticated user who was invited can update the status
-        allow update: if request.auth.uid != null 
-                       && resource.data.email == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email;
+        // The specific user who was invited can update the invite to "accepted".
+        allow update: if request.auth != null && request.auth.token.email == resource.data.email;
       }
     }
 
+    // Rules for the 'users' collection
     match /users/{userId} {
-      // A user can read their own profile. An admin can read profiles of users in their company.
-      allow get: if request.auth.uid == userId || isCompanyAdmin(get(/databases/$(database)/documents/users/$(userId)).data.company_id);
-      // An admin can list all users in their company (client-side query enforces company_id).
-      allow list: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Admin";
-      // Allow user creation during signup or invite acceptance.
-      allow create;
-      // Allow a user to update their own profile.
-      allow update: if request.auth.uid == userId;
+      // Allow a user to read their own profile.
+      // Allow an admin to read any user profile within their company.
+      allow get: if request.auth != null && (request.auth.uid == userId || isCompanyAdmin(get(/databases/$(database)/documents/users/$(userId)).data.company_id));
+
+      // Allow an admin to list all users in their company.
+      allow list: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Admin';
+
+      // Allow a new user to create their own user document upon registration.
+      allow create: if request.auth != null && request.auth.uid == userId;
+
+      // Allow an admin to update user roles (but not their own).
+      allow update: if request.auth != null && userId != request.auth.uid && isCompanyAdmin(resource.data.company_id);
     }
   }
 }

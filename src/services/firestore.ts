@@ -1,5 +1,6 @@
 
 
+
 import { doc, getDoc, setDoc, serverTimestamp, collection, writeBatch, query, where, getDocs, addDoc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
@@ -20,6 +21,8 @@ export interface Invite {
     status: "pending" | "accepted";
     created_at: any;
     companyName?: string;
+    accepted_at?: any;
+    accepted_by_uid?: string;
 }
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
@@ -233,9 +236,11 @@ export async function acceptInvite({ companyId, inviteId, user, role }: AcceptIn
         created_at: serverTimestamp(),
     });
 
-    // Update the invite status to 'accepted'
+    // Update the invite status to 'accepted' and add audit fields
     batch.update(inviteRef, {
-        status: 'accepted'
+        status: 'accepted',
+        accepted_at: serverTimestamp(),
+        accepted_by_uid: user.uid
     });
 
     await batch.commit();

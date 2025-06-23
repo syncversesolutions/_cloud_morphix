@@ -1,3 +1,4 @@
+
 import { doc, getDoc, setDoc, serverTimestamp, collection, writeBatch, query, where, getDocs, addDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
@@ -72,7 +73,7 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
         created_at: serverTimestamp(),
     });
     
-    // Default roles are now created on the first visit to the user management page.
+    // The initial "Admin" role is created on the first visit to the user management page.
     await batch.commit();
 }
 
@@ -152,13 +153,10 @@ export async function createInvite(companyId: string, email: string, fullName: s
     });
 }
 
-export async function createDefaultRoles(companyId: string): Promise<void> {
-    const batch = writeBatch(db);
+export async function createInitialAdminRole(companyId: string): Promise<void> {
     const rolesRef = collection(db, "companies", companyId, "roles");
-    
-    batch.set(doc(rolesRef), { name: "Admin", created_at: serverTimestamp() });
-    batch.set(doc(rolesRef), { name: "Analyst", created_at: serverTimestamp() });
-    batch.set(doc(rolesRef), { name: "Viewer", created_at: serverTimestamp() });
-
-    await batch.commit();
+    await addDoc(rolesRef, {
+        name: "Admin",
+        created_at: serverTimestamp(),
+    });
 }

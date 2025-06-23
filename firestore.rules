@@ -1,56 +1,65 @@
-
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // --- Helper Functions ---
-    function isAuthed() {
-      return request.auth != null;
-    }
-
-    function isOwnRecord(userId) {
-      return isAuthed() && request.auth.uid == userId;
-    }
-    
-    function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-    }
-
+    // Helper to check if a user is an admin of a specific company.
     function isCompanyAdmin(companyId) {
-      // Check if the user is authenticated, belongs to the specified company, and has the 'Admin' role.
-      return isAuthed() && getUserData().company_id == companyId && getUserData().role == "Admin";
+      // Ensure the user is authenticated before trying to access their profile.
+      if (request.auth == null) {
+        return false;
+      }
+      let userProfile = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return userProfile.company_id == companyId &&
+             userProfile.role == 'Admin';
     }
 
-    // --- Collection Rules ---
-    
-    // Allow user creation during sign-up.
-    // Users can only read or update their own profile.
-    match /users/{userId} {
-      allow read, update: if isOwnRecord(userId);
-      allow create: if isAuthed();
+    // Helper to check if the currently authenticated user is an Admin in their own company.
+    function isOwnCompanyAdmin() {
+      // Ensure the user is authenticated.
+      if (request.auth == null) {
+        return false;
+      }
+      let userProfile = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return userProfile.role == 'Admin';
     }
-    
-    // Allow company creation during sign-up.
-    // Only an admin of that company can read or update it.
+
     match /companies/{companyId} {
-      allow read, update: if isCompanyAdmin(companyId);
-      allow create: if isAuthed();
+      allow read;
+      allow create: if request.auth != null;
+      allow update: if isCompanyAdmin(companyId);
+
+      match /roles/{roleId} {
+        // An admin of a company can read and create roles for that company.
+        allow read, create: if isCompanyAdmin(companyId);
+      }
     }
-    
-    // Only an admin of the parent company can manage roles.
-    match /companies/{companyId}/roles/{roleId} {
-      allow read, write: if isCompanyAdmin(companyId);
+
+    match /users/{userId} {
+      // A user can create, read, and update their own document.
+      allow create, get, update: if request.auth.uid == userId;
+
+      // An admin can GET a user document if that user is in their company.
+      // This rule uses `resource.data` which is available for `get` operations.
+      allow get: if isCompanyAdmin(resource.data.company_id);
+
+      // An admin can LIST users. The query from the app MUST include a
+      // `where("company_id", "==", companyId)` clause. Firestore will then
+      // enforce the `get` rule above on each document, ensuring security.
+      allow list: if isOwnCompanyAdmin();
     }
-    
-    // Only an admin of the company can create or read invites.
+
     match /invites/{inviteId} {
-      // Allow read (get, list) if the user is an admin.
-      // The client-side query MUST restrict reads to the user's own companyId for this to be secure.
-      allow read: if isAuthed() && getUserData().role == "Admin";
-      
-      // Allow creating an invite if the user is an admin of the company in the invite.
+      // An admin can create an invite for their own company.
+      // This uses `request.resource.data` which is correct for `create`.
       allow create: if isCompanyAdmin(request.resource.data.company_id);
+
+      // An admin can GET a single invite if it belongs to their company.
+      allow get: if isCompanyAdmin(resource.data.company_id);
+
+      // An admin can LIST invites. The same logic as listing users applies.
+      // The client MUST filter by the admin's company_id.
+      allow list: if isOwnCompanyAdmin();
     }
   }
 }

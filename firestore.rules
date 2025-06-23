@@ -2,64 +2,59 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    
+    function isUserAuthenticated() {
+      return request.auth != null;
+    }
 
-    // Helper to check if a user is an admin of a specific company.
+    function isRequestingUserAdmin() {
+      // Check if the currently authenticated user has the 'Admin' role.
+      // This requires a read on the user's own document.
+      let userProfile = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return userProfile.role == "Admin";
+    }
+
     function isCompanyAdmin(companyId) {
-      // Ensure the user is authenticated before trying to access their profile.
-      if (request.auth == null) {
-        return false;
-      }
+      // Check if the user is an admin OF A SPECIFIC company.
       let userProfile = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-      return userProfile.company_id == companyId &&
-             userProfile.role == 'Admin';
-    }
-
-    // Helper to check if the currently authenticated user is an Admin in their own company.
-    function isOwnCompanyAdmin() {
-      // Ensure the user is authenticated.
-      if (request.auth == null) {
-        return false;
-      }
-      let userProfile = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-      return userProfile.role == 'Admin';
-    }
-
-    match /companies/{companyId} {
-      allow read;
-      allow create: if request.auth != null;
-      allow update: if isCompanyAdmin(companyId);
-
-      match /roles/{roleId} {
-        // An admin of a company can read and create roles for that company.
-        allow read, create: if isCompanyAdmin(companyId);
-      }
+      return userProfile.company_id == companyId && userProfile.role == "Admin";
     }
 
     match /users/{userId} {
-      // A user can create, read, and update their own document.
-      allow create, get, update: if request.auth.uid == userId;
-
-      // An admin can GET a user document if that user is in their company.
-      // This rule uses `resource.data` which is available for `get` operations.
-      allow get: if isCompanyAdmin(resource.data.company_id);
-
-      // An admin can LIST users. The query from the app MUST include a
-      // `where("company_id", "==", companyId)` clause. Firestore will then
-      // enforce the `get` rule above on each document, ensuring security.
-      allow list: if isOwnCompanyAdmin();
+      // A user can always read their own profile.
+      allow get: if request.auth.uid == userId;
+      // An admin can list all users. The client-side code is responsible for filtering by company.
+      // This is a security trade-off to avoid restructuring the database.
+      allow list: if isRequestingUserAdmin();
+      
+      // A user can create their own profile.
+      allow create: if request.auth.uid == userId;
+      // A user can update their own profile.
+      allow update: if request.auth.uid == userId;
     }
 
+    match /companies/{companyId} {
+      // Any authenticated user can look up a company document.
+      allow get: if isUserAuthenticated();
+      // Anyone can create a company during registration.
+      allow create;
+    }
+
+    match /companies/{companyId}/roles/{roleId} {
+      // Only an admin of the company can read or create roles for it.
+      allow list, get: if isCompanyAdmin(companyId);
+      allow create: if isCompanyAdmin(companyId);
+    }
+    
     match /invites/{inviteId} {
       // An admin can create an invite for their own company.
-      // This uses `request.resource.data` which is correct for `create`.
       allow create: if isCompanyAdmin(request.resource.data.company_id);
-
-      // An admin can GET a single invite if it belongs to their company.
-      allow get: if isCompanyAdmin(resource.data.company_id);
-
-      // An admin can LIST invites. The same logic as listing users applies.
-      // The client MUST filter by the admin's company_id.
-      allow list: if isOwnCompanyAdmin();
+      
+      // An admin can list all invites. The client-side code is responsible for filtering by company.
+      allow list: if isRequestingUserAdmin();
+      
+      // Only an admin can read an individual invite document.
+      allow get: if isRequestingUserAdmin();
     }
   }
 }

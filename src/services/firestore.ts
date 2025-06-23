@@ -1,5 +1,6 @@
 
-import { doc, getDoc, setDoc, serverTimestamp, collection, writeBatch, query, where, getDocs, addDoc } from "firebase/firestore";
+
+import { doc, getDoc, setDoc, serverTimestamp, collection, writeBatch, query, where, getDocs, addDoc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 export interface UserProfile {
@@ -18,6 +19,7 @@ export interface Invite {
     role: string;
     status: "pending" | "accepted";
     created_at: any;
+    companyName?: string;
 }
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
@@ -86,16 +88,9 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
     await batch.commit();
 }
 
-
-interface UserData {
-    uid: string;
-    fullName: string;
-    email: string;
-    companyId: string;
-    role: "Admin" | "Analyst" | "Viewer" | string;
-}
-
-export async function createUserUnderCompany(userData: UserData): Promise<void> {
+// This function is now deprecated in favor of the invite flow.
+// It is kept for reference but should not be used.
+export async function createUserUnderCompany(userData: any): Promise<void> {
     const companyRef = doc(db, "companies", userData.companyId);
     const companySnap = await getDoc(companyRef);
 
@@ -131,9 +126,13 @@ export async function getCompanyUsers(companyId: string): Promise<UserProfile[]>
     return users;
 }
 
-export async function getCompanyInvites(companyId: string): Promise<Invite[]> {
+export async function getCompanyInvites(companyId: string, showAll: boolean = false): Promise<Invite[]> {
     const invitesRef = collection(db, "companies", companyId, "invites");
-    const q = query(invitesRef, where("status", "==", "pending"));
+    
+    const q = showAll 
+      ? query(invitesRef) 
+      : query(invitesRef, where("status", "==", "pending"));
+
     const querySnapshot = await getDocs(q);
     
     const invites: Invite[] = [];
@@ -142,7 +141,6 @@ export async function getCompanyInvites(companyId: string): Promise<Invite[]> {
     });
     return invites;
 }
-
 
 export async function getCompanyRoles(companyId: string): Promise<string[]> {
     const rolesRef = collection(db, "companies", companyId, "roles");
@@ -186,4 +184,59 @@ export async function createInitialAdminRole(companyId: string): Promise<void> {
             created_at: serverTimestamp(),
         });
     }
+}
+
+// --- Invite Acceptance Flow ---
+
+export async function getInviteDetails(companyId: string, inviteId: string): Promise<Invite | null> {
+    const inviteRef = doc(db, "companies", companyId, "invites", inviteId);
+    const companyRef = doc(db, "companies", companyId);
+    
+    const [inviteSnap, companySnap] = await Promise.all([getDoc(inviteRef), getDoc(companyRef)]);
+
+    if (inviteSnap.exists()) {
+        const inviteData = inviteSnap.data() as Omit<Invite, 'invite_id'>;
+        const companyData = companySnap.exists() ? companySnap.data() : null;
+        return { 
+            ...inviteData, 
+            invite_id: inviteSnap.id,
+            companyName: companyData?.company_name 
+        };
+    }
+    return null;
+}
+
+interface AcceptInviteData {
+    companyId: string;
+    inviteId: string;
+    user: {
+        uid: string;
+        email: string;
+        fullName: string;
+    };
+    role: string;
+}
+
+export async function acceptInvite({ companyId, inviteId, user, role }: AcceptInviteData): Promise<void> {
+    const userRef = doc(db, "users", user.uid);
+    const inviteRef = doc(db, "companies", companyId, "invites", inviteId);
+
+    const batch = writeBatch(db);
+
+    // Create the new user document
+    batch.set(userRef, {
+        user_id: user.uid,
+        full_name: user.fullName,
+        email: user.email,
+        company_id: companyId,
+        role: role,
+        created_at: serverTimestamp(),
+    });
+
+    // Update the invite status to 'accepted'
+    batch.update(inviteRef, {
+        status: 'accepted'
+    });
+
+    await batch.commit();
 }

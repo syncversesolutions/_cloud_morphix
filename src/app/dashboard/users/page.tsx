@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { ShieldPlus, UserPlus } from "lucide-react";
+import { ShieldPlus, UserPlus, Copy, Check } from "lucide-react";
 import ManageRolesDialog from "@/components/dashboard/manage-roles-dialog";
 import InviteUserDialog from "@/components/dashboard/invite-user-dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -23,6 +23,7 @@ export default function UserManagementPage() {
   const [loading, setLoading] = useState(true);
   const [isRolesDialogOpen, setIsRolesDialogOpen] = useState(false);
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
+  const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
 
   const companyId = userProfile?.company_id;
 
@@ -33,7 +34,7 @@ export default function UserManagementPage() {
       const [fetchedUsers, fetchedRoles, fetchedInvites] = await Promise.all([
         getCompanyUsers(companyId),
         getCompanyRoles(companyId),
-        getCompanyInvites(companyId),
+        getCompanyInvites(companyId, true), // Fetch all invites to show status
       ]);
 
       let currentRoles = fetchedRoles;
@@ -42,9 +43,11 @@ export default function UserManagementPage() {
         currentRoles = await getCompanyRoles(companyId); 
       }
       
+      const uniqueRoles = [...new Set(currentRoles)];
+
       setUsers(fetchedUsers);
       setInvites(fetchedInvites);
-      setRoles(currentRoles);
+      setRoles(uniqueRoles.sort());
 
     } catch (error) {
       console.error("Failed to fetch data:", error);
@@ -98,6 +101,15 @@ export default function UserManagementPage() {
     }
   };
 
+  const handleCopyInviteLink = (inviteId: string) => {
+    if(!companyId) return;
+    const url = `${window.location.origin}/register/invite?companyId=${companyId}&inviteId=${inviteId}`;
+    navigator.clipboard.writeText(url);
+    setCopiedInviteId(inviteId);
+    toast({ title: "Success", description: "Invite link copied to clipboard." });
+    setTimeout(() => setCopiedInviteId(null), 2000);
+  };
+
   if (authLoading || loading) {
     return <LoadingSpinner />;
   }
@@ -112,8 +124,10 @@ export default function UserManagementPage() {
   }
   
   const allTeamMembers = [
-    ...users.map(u => ({...u, type: 'user' as const, id: u.user_id })),
-    ...invites.map(i => ({...i, type: 'invite' as const, id: i.invite_id}))
+    ...users.map(u => ({...u, type: 'user' as const, id: u.user_id, status: 'accepted' as const })),
+    ...invites
+        .filter(i => i.status === 'pending') // Only show pending invites
+        .map(i => ({...i, type: 'invite' as const, id: i.invite_id, role: i.role, status: 'pending' as const}))
   ].sort((a, b) => a.full_name.localeCompare(b.full_name));
 
   return (
@@ -147,6 +161,7 @@ export default function UserManagementPage() {
                 <TableHead>Full Name</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>Status / Role</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -162,11 +177,19 @@ export default function UserManagementPage() {
                         <Badge variant="outline">Pending Invitation</Badge>
                       )}
                     </TableCell>
+                    <TableCell className="text-right">
+                        {member.type === 'invite' && (
+                            <Button variant="ghost" size="sm" onClick={() => handleCopyInviteLink(member.id)}>
+                                {copiedInviteId === member.id ? <Check className="mr-2 text-green-500" /> : <Copy className="mr-2" />}
+                                Copy Link
+                            </Button>
+                        )}
+                    </TableCell>
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={3} className="h-24 text-center">
+                  <TableCell colSpan={4} className="h-24 text-center">
                     No users found.
                   </TableCell>
                 </TableRow>
@@ -186,7 +209,7 @@ export default function UserManagementPage() {
       <InviteUserDialog
         isOpen={isInviteDialogOpen}
         onOpenChange={setIsInviteDialogOpen}
-        roles={roles}
+        roles={roles.filter(r => r !== 'Admin')} // Cannot assign Admin via invite
         onInviteUser={handleInviteUser}
        />
     </div>

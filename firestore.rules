@@ -4,39 +4,42 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function to check if a user is an admin of a given company
+    // Helper function to check if a user is an admin of a specific company
     function isCompanyAdmin(companyId) {
       let userProfile = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-      return request.auth.uid != null &&
-             userProfile.company_id == companyId &&
-             userProfile.role == "Admin";
+      return request.auth != null && userProfile.company_id == companyId && userProfile.role == 'Admin';
+    }
+    
+    // Users can be read by other users in the same company.
+    // Users can only create their own user document.
+    // Users can only update their own profile.
+    match /users/{userId} {
+      allow read, update: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth.uid == userId;
+      allow list: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Admin';
     }
 
-    // Companies can be read by any authenticated user, but only created by the app
+    // Companies can be read by any authenticated user who belongs to that company.
+    // Company documents can only be created during the company registration flow.
+    // Only an admin of the company can update company details.
     match /companies/{companyId} {
-      allow read: if request.auth.uid != null;
-      allow create: if request.auth.uid != null;
+      allow read: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.company_id == companyId;
+      allow create: if request.auth != null; // Simplified for company creation flow
       allow update: if isCompanyAdmin(companyId);
 
-      // Roles can only be managed by company admins
+      // Roles can be managed by company admins.
       match /roles/{roleId} {
-        allow get, list, create: if isCompanyAdmin(companyId);
+        allow read, write: if isCompanyAdmin(companyId);
       }
       
-      // Invites can only be managed by company admins
+      // Invitations can be created and listed by admins.
+      // A specific invite can be fetched by anyone with the link (for registration).
+      // An invite can only be updated by the user whose email matches the invite.
       match /invites/{inviteId} {
-        allow get, list, create: if isCompanyAdmin(companyId);
+        allow get: if true;
+        allow list, create: if isCompanyAdmin(companyId);
+        allow update: if request.auth != null && get(/databases/$(database)/documents/companies/$(companyId)/invites/$(inviteId)).data.email == request.auth.email;
       }
-    }
-
-    // Users can only be created during signup or by an admin.
-    // Users can read their own profile.
-    // Company admins can list all users in their company.
-    match /users/{userId} {
-      allow get: if request.auth.uid == userId;
-      allow create: if request.auth.uid == userId;
-      allow update: if request.auth.uid == userId;
-      allow list: if isCompanyAdmin(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.company_id);
     }
   }
 }

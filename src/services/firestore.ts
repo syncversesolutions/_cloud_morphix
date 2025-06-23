@@ -1,6 +1,4 @@
 
-
-
 import { doc, getDoc, setDoc, serverTimestamp, collection, writeBatch, query, where, getDocs, addDoc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
@@ -11,6 +9,7 @@ export interface UserProfile {
     company_id: string;
     role: "Admin" | "Analyst" | "Viewer" | string; // Allow for custom roles
     created_at: any;
+    phone_number?: string;
 }
 
 export interface Invite {
@@ -244,4 +243,18 @@ export async function acceptInvite({ companyId, inviteId, user, role }: AcceptIn
     });
 
     await batch.commit();
+}
+
+
+export async function updateUserProfile(uid: string, data: { full_name: string; phone_number?: string; }): Promise<void> {
+    const userRef = doc(db, "users", uid);
+    const updateData: { [key: string]: any } = {
+        full_name: data.full_name,
+    };
+
+    if (data.phone_number !== undefined) {
+        updateData.phone_number = data.phone_number;
+    }
+    
+    await updateDoc(userRef, updateData);
 }

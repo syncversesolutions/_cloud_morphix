@@ -62,6 +62,14 @@ export default function UserManagementPage() {
 
   const handleAddRole = async (roleName: string) => {
     if (!companyId) return false;
+    if (roles.map(r => r.toLowerCase()).includes(roleName.toLowerCase())) {
+        toast({
+            variant: "destructive",
+            title: "Duplicate Role",
+            description: `The role "${roleName}" already exists.`,
+        });
+        return false;
+    }
     try {
       await addRole(companyId, roleName);
       toast({ title: "Success", description: `Role "${roleName}" added.` });

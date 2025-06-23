@@ -102,8 +102,8 @@ export default function InviteUserDialog({ isOpen, onOpenChange, roles, onInvite
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {roles.map((role) => (
-                        <SelectItem key={role} value={role}>
+                      {roles.map((role, index) => (
+                        <SelectItem key={`${role}-${index}`} value={role}>
                           {role}
                         </SelectItem>
                       ))}

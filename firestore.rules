@@ -4,50 +4,53 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function to get the requesting user's profile from the /users collection
-    function getUserProfile() {
+    // --- Helper Functions ---
+    function isAuthed() {
+      return request.auth != null;
+    }
+
+    function isOwnRecord(userId) {
+      return isAuthed() && request.auth.uid == userId;
+    }
+    
+    function getUserData() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    // Helper function to check if the user is an admin of a specific company
-    function isAdmin(companyId) {
-      let userProfile = getUserProfile();
-      return userProfile.company_id == companyId && userProfile.role == 'Admin';
+    function isCompanyAdmin(companyId) {
+      // Check if the user is authenticated, belongs to the specified company, and has the 'Admin' role.
+      return isAuthed() && getUserData().company_id == companyId && getUserData().role == "Admin";
     }
 
-    // Rules for the 'users' collection
+    // --- Collection Rules ---
+    
+    // Allow user creation during sign-up.
+    // Users can only read or update their own profile.
     match /users/{userId} {
-      // Allow a user to be created during registration
-      allow create: if request.auth != null && request.auth.uid == userId;
-
-      // Allow a user to read/update their own profile.
-      // Allow an admin to read any user profile within their own company.
-      allow read: if request.auth != null && (
-        request.auth.uid == userId ||
-        (getUserProfile().role == 'Admin' && getUserProfile().company_id == resource.data.company_id)
-      );
-      allow update: if request.auth != null && request.auth.uid == userId;
-    }
-
-    // Rules for the 'companies' collection
-    match /companies/{companyId} {
-      // Allow any authenticated user to create a company during registration
-      allow create: if request.auth != null;
-      // Allow any member of a company to read their company's document
-      allow read: if request.auth != null && getUserProfile().company_id == companyId;
-    }
-
-    // Rules for the 'roles' subcollection within a company
-    match /companies/{companyId}/roles/{roleId} {
-      // Allow admins of the company to manage roles
-      allow read, write: if request.auth != null && isAdmin(companyId);
+      allow read, update: if isOwnRecord(userId);
+      allow create: if isAuthed();
     }
     
-    // Rules for the 'invites' collection
+    // Allow company creation during sign-up.
+    // Only an admin of that company can read or update it.
+    match /companies/{companyId} {
+      allow read, update: if isCompanyAdmin(companyId);
+      allow create: if isAuthed();
+    }
+    
+    // Only an admin of the parent company can manage roles.
+    match /companies/{companyId}/roles/{roleId} {
+      allow read, write: if isCompanyAdmin(companyId);
+    }
+    
+    // Only an admin of the company can create or read invites.
     match /invites/{inviteId} {
-      // Allow admins to create invites for their company.
-      // The companyId in the new invite must match the admin's companyId.
-      allow create: if request.auth != null && isAdmin(request.resource.data.company_id);
+      // Allow read (get, list) if the user is an admin.
+      // The client-side query MUST restrict reads to the user's own companyId for this to be secure.
+      allow read: if isAuthed() && getUserData().role == "Admin";
+      
+      // Allow creating an invite if the user is an admin of the company in the invite.
+      allow create: if isCompanyAdmin(request.resource.data.company_id);
     }
   }
 }

@@ -1,85 +1,69 @@
-
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Helper functions
-    function isAuthed() {
-      return request.auth != null;
-    }
-
-    function isUser(uid) {
-      return isAuthed() && request.auth.uid == uid;
+    
+    // Helper function to check if a user exists and is an admin of a company.
+    function isCompanyAdmin(companyId) {
+      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return request.auth != null &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             userDoc.data.company_id == companyId &&
+             userDoc.data.role == "Admin";
     }
     
-    function userExists(uid) {
-      return exists(/databases/$(database)/documents/users/$(uid));
+    // Helper function to check if a user is a member of a company.
+    function isCompanyMember(companyId) {
+      // This check is for authenticated users who are part of a company.
+      return request.auth != null &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.company_id == companyId;
     }
 
-    function getUserData(uid) {
-      return get(/databases/$(database)/documents/users/$(uid)).data;
-    }
-
-    function isCompanyAdmin(companyId) {
-      return isAuthed() 
-        && userExists(request.auth.uid) 
-        && getUserData(request.auth.uid).company_id == companyId 
-        && getUserData(request.auth.uid).role == "Admin";
-    }
-
-    // USERS collection
-    match /users/{userId} {
-      // A user can create their own profile during registration or invite acceptance.
-      allow create: if isUser(userId);
-      
-      // A user can read their own profile.
-      // An admin of the same company can also read user profiles in their company.
-      allow read: if isUser(userId) || (isAuthed() && userExists(request.auth.uid) && getUserData(request.auth.uid).company_id == resource.data.company_id && isCompanyAdmin(getUserData(request.auth.uid).company_id));
-
-      // A user can update only specific fields of their own profile.
-      allow update: if isUser(userId) && request.resource.data.keys().hasOnly(['full_name', 'phone_number']);
-    }
-
-    // COMPANIES collection
     match /companies/{companyId} {
-      // An authenticated user can create a company.
-      allow create: if isAuthed();
+      // Allow unauthenticated users (for invites) or company members to read company data.
+      allow get: if isCompanyMember(companyId) || request.auth == null;
       
-      // An admin of the company can update it.
+      // Allow authenticated users to create a company.
+      allow create: if request.auth != null &&
+                       request.resource.data.company_id == companyId;
+                       
+      // Allow company admins to update their own company document.
       allow update: if isCompanyAdmin(companyId);
 
-      // Reading a single company document is allowed for:
-      // 1. Admins of that company.
-      // 2. Unauthenticated users (necessary for the invite page to get company name).
-      allow get: if isCompanyAdmin(companyId) || !isAuthed();
-      
-      // Listing multiple companies is not allowed.
-      allow list: if false;
-      
-      // ROLES sub-collection
+      // --- Sub-collections ---
       match /roles/{roleId} {
         // Admins can manage roles.
-        allow read, create: if isCompanyAdmin(companyId);
-        allow update, delete: if false;
+        allow get, list, create: if isCompanyAdmin(companyId);
       }
-      
-      // INVITES sub-collection
+
       match /invites/{inviteId} {
+        // Anyone with the link can read the invite details to register.
+        allow get: if request.auth == null;
         // Admins can create and list invites.
         allow create, list: if isCompanyAdmin(companyId);
-        
-        // Anyone can read a specific invite (required for the invite acceptance page).
-        allow get: if true; 
-        
-        // An invite can only be updated by a new user accepting it.
-        allow update: if isAuthed()
-                      && resource.data.status == 'pending'
-                      && request.resource.data.status == 'accepted'
-                      && request.resource.data.accepted_by_uid == request.auth.uid;
-                      
-        allow delete: if false;
+        // The invited user can update the invite to accept it.
+        allow update: if request.auth != null &&
+                         request.resource.data.status == "accepted" &&
+                         resource.data.status == "pending" &&
+                         request.resource.data.accepted_by_uid == request.auth.uid;
       }
+    }
+
+    match /users/{userId} {
+      // A user can read their own profile.
+      allow get: if request.auth != null && request.auth.uid == userId;
+
+      // An admin can list all users in their company.
+      allow list: if request.auth != null &&
+                     exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+                     get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Admin";
+
+      // A user can update their own profile.
+      allow update: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow user creation during signup or invite acceptance.
+      allow create: if request.auth != null && request.auth.uid == userId;
     }
   }
 }

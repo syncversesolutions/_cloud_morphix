@@ -44,6 +44,8 @@ export async function getDashboardUrl(uid: string): Promise<string | null> {
             const companySnap = await getDoc(companyRef);
             if (companySnap.exists()) {
                 const companyData = companySnap.data();
+                // This check is important for security. Only Admins can read the company doc.
+                // For non-admins, companySnap.exists() will be true, but companyData will be empty.
                 return companyData.lookerUrl || null;
             }
         } catch (error: any) {
@@ -99,6 +101,41 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
     
     await batch.commit();
 }
+
+
+export async function createUserUnderCompany({
+    uid,
+    email,
+    fullName,
+    companyId,
+    role,
+}: {
+    uid: string;
+    email: string;
+    fullName: string;
+    companyId: string;
+    role: "Admin" | "Analyst" | "Viewer" | string;
+}): Promise<void> {
+    const companyRef = doc(db, "companies", companyId);
+    const userRef = doc(db, "users", uid);
+
+    const companySnap = await getDoc(companyRef);
+    if (!companySnap.exists()) {
+        throw new Error("The provided Company ID does not exist. Please check and try again.");
+    }
+    const companyData = companySnap.data();
+
+    await setDoc(userRef, {
+        user_id: uid,
+        full_name: fullName,
+        email: email,
+        company_id: companyId,
+        company_name: companyData.company_name,
+        role: role,
+        created_at: serverTimestamp(),
+    });
+}
+
 
 export async function getCompanyUsers(companyId: string): Promise<UserProfile[]> {
     const usersRef = collection(db, "users");

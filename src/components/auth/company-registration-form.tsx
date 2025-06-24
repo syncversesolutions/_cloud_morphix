@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from "react";
@@ -163,6 +164,10 @@ export default function CompanyRegistrationForm() {
                       <SelectItem value="finance">Finance</SelectItem>
                       <SelectItem value="healthcare">Healthcare</SelectItem>
                       <SelectItem value="ecommerce">E-commerce</SelectItem>
+                      <SelectItem value="marketing">Marketing</SelectItem>
+                      <SelectItem value="retail">Retail</SelectItem>
+                      <SelectItem value="manufacturing">Manufacturing</SelectItem>
+                      <SelectItem value="law firm">Law Firm</SelectItem>
                       <SelectItem value="other">Other</SelectItem>
                     </SelectContent>
                   </Select>

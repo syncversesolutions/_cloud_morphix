@@ -38,11 +38,23 @@ export async function getDashboardUrl(uid: string): Promise<string | null> {
     const userProfile = await getUserProfile(uid);
 
     if (userProfile && userProfile.company_id) {
-        const companyRef = doc(db, "companies", userProfile.company_id);
-        const companySnap = await getDoc(companyRef);
-        if (companySnap.exists()) {
-            const companyData = companySnap.data();
-            return companyData.lookerUrl || null;
+        try {
+            const companyRef = doc(db, "companies", userProfile.company_id);
+            const companySnap = await getDoc(companyRef);
+            if (companySnap.exists()) {
+                const companyData = companySnap.data();
+                return companyData.lookerUrl || null;
+            }
+        } catch (error: any) {
+            // Gracefully handle permission errors for non-admins.
+            // This is expected behavior as only admins can read the company document.
+            if (error.code === 'permission-denied') {
+                console.log("User does not have permission to view company-level dashboard URL. This is expected for non-admins.");
+                return null;
+            }
+            // For other errors, log them and let the caller handle it if necessary.
+            console.error("An unexpected error occurred while fetching dashboard URL:", error);
+            return null; // Return null to prevent UI crash
         }
     }
     return null;

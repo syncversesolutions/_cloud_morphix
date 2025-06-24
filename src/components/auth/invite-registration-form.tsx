@@ -123,6 +123,7 @@ export default function InviteRegistrationForm() {
           fullName: values.fullName,
         },
         role: inviteData.role,
+        companyName: inviteData.companyName,
       });
 
       router.push("/dashboard");

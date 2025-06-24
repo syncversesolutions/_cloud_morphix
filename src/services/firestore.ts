@@ -7,6 +7,7 @@ export interface UserProfile {
     full_name: string;
     email: string;
     company_id: string;
+    company_name?: string;
     role: "Admin" | "Analyst" | "Viewer" | string; // Allow for custom roles
     created_at: any;
     phone_number?: string;
@@ -94,6 +95,7 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
         full_name: adminData.fullName,
         email: adminData.email,
         company_id: companyRef.id,
+        company_name: companyData.company_name,
         role: "Admin",
         created_at: serverTimestamp(),
     });
@@ -229,21 +231,30 @@ interface AcceptInviteData {
         fullName: string;
     };
     role: string;
+    companyName?: string;
 }
 
-export async function acceptInvite({ companyId, inviteId, user, role }: AcceptInviteData): Promise<void> {
+export async function acceptInvite({ companyId, inviteId, user, role, companyName }: AcceptInviteData): Promise<void> {
     const userRef = doc(db, "users", user.uid);
     const inviteRef = doc(db, "companies", companyId, "invites", inviteId);
 
     const batch = writeBatch(db);
 
-    // Create the new user document
-    batch.set(userRef, {
+    const newUserProfileData: Omit<UserProfile, 'created_at'> = {
         user_id: user.uid,
         full_name: user.fullName,
         email: user.email,
         company_id: companyId,
         role: role,
+    };
+
+    if (companyName) {
+        newUserProfileData.company_name = companyName;
+    }
+
+    // Create the new user document
+    batch.set(userRef, {
+        ...newUserProfileData,
         created_at: serverTimestamp(),
     });
 

@@ -1,3 +1,4 @@
+
 "use client";
 
 import { auth } from "@/lib/firebase";
@@ -6,10 +7,12 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { LogOut, Cloud } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function Header() {
   const router = useRouter();
   const { toast } = useToast();
+  const { userProfile } = useAuth();
 
   const handleLogout = async () => {
     try {
@@ -30,6 +33,12 @@ export default function Header() {
         <div className="mr-4 flex items-center">
           <Cloud className="h-6 w-6 text-primary" />
           <span className="ml-2 text-lg font-bold font-headline">Cloud Morphix</span>
+          {userProfile?.company_name && (
+            <>
+                <div className="mx-3 h-5 w-px bg-border/70"></div>
+                <span className="text-lg font-semibold text-muted-foreground">{userProfile.company_name}</span>
+            </>
+          )}
         </div>
         <div className="flex flex-1 items-center justify-end space-x-2">
           <Button variant="ghost" onClick={handleLogout}>

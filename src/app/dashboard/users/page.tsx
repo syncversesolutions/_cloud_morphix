@@ -3,16 +3,19 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useAuth, type UserProfile } from "@/hooks/use-auth";
-import { getCompanyUsers, getCompanyRoles, addRole, createInvite, createInitialAdminRole, getCompanyInvites, type Invite } from "@/services/firestore";
+import { getCompanyUsers, getCompanyRoles, addRole, createInvite, createInitialAdminRole, getCompanyInvites, type Invite, updateUserRole, removeUserFromCompany } from "@/services/firestore";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { ShieldPlus, UserPlus, Copy, Check } from "lucide-react";
+import { ShieldPlus, UserPlus, Copy, Check, MoreHorizontal } from "lucide-react";
 import ManageRolesDialog from "@/components/dashboard/manage-roles-dialog";
 import InviteUserDialog from "@/components/dashboard/invite-user-dialog";
 import { useToast } from "@/hooks/use-toast";
 import LoadingSpinner from "@/components/loading-spinner";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import ChangeRoleDialog from "@/components/dashboard/change-role-dialog";
+import RemoveUserDialog from "@/components/dashboard/remove-user-dialog";
 
 export default function UserManagementPage() {
   const { userProfile, loading: authLoading } = useAuth();
@@ -24,6 +27,11 @@ export default function UserManagementPage() {
   const [isRolesDialogOpen, setIsRolesDialogOpen] = useState(false);
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
   const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
+
+  // State for new dialogs
+  const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
+  const [isChangeRoleDialogOpen, setIsChangeRoleDialogOpen] = useState(false);
+  const [isRemoveUserDialogOpen, setIsRemoveUserDialogOpen] = useState(false);
 
   const companyId = userProfile?.company_id;
 
@@ -109,6 +117,32 @@ export default function UserManagementPage() {
     toast({ title: "Success", description: "Invite link copied to clipboard." });
     setTimeout(() => setCopiedInviteId(null), 2000);
   };
+  
+  const handleChangeRole = async (newRole: string) => {
+    if (!selectedUser) return false;
+    try {
+      await updateUserRole(selectedUser.user_id, newRole);
+      toast({ title: "Success", description: `${selectedUser.full_name}'s role has been updated to ${newRole}.`});
+      fetchUsersAndRoles(); // Refresh user list
+      return true;
+    } catch (error) {
+       toast({ variant: "destructive", title: "Update Failed", description: "Could not update the user's role."});
+       return false;
+    }
+  }
+
+  const handleRemoveUser = async () => {
+    if (!selectedUser) return false;
+    try {
+        await removeUserFromCompany(selectedUser.user_id);
+        toast({ title: "Success", description: `${selectedUser.full_name} has been removed from the company.`});
+        fetchUsersAndRoles(); // Refresh user list
+        return true;
+    } catch (error) {
+        toast({ variant: "destructive", title: "Removal Failed", description: "Could not remove the user."});
+        return false;
+    }
+  }
 
   if (authLoading || loading) {
     return <LoadingSpinner />;
@@ -184,6 +218,36 @@ export default function UserManagementPage() {
                                 Copy Link
                             </Button>
                         )}
+                        {member.type === 'user' && userProfile.user_id !== member.user_id && (
+                           <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" className="h-8 w-8 p-0">
+                                <span className="sr-only">Open menu</span>
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setSelectedUser(member);
+                                  setIsChangeRoleDialogOpen(true);
+                                }}
+                              >
+                                Change Role
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                onClick={() => {
+                                  setSelectedUser(member);
+                                  setIsRemoveUserDialogOpen(true);
+                                }}
+                              >
+                                Remove User
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
                     </TableCell>
                   </TableRow>
                 ))
@@ -212,6 +276,24 @@ export default function UserManagementPage() {
         roles={roles.filter(r => r !== 'Admin')} // Cannot assign Admin via invite
         onInviteUser={handleInviteUser}
        />
+       
+      {selectedUser && (
+         <>
+            <ChangeRoleDialog
+                isOpen={isChangeRoleDialogOpen}
+                onOpenChange={setIsChangeRoleDialogOpen}
+                user={selectedUser}
+                roles={roles}
+                onConfirm={handleChangeRole}
+            />
+            <RemoveUserDialog
+                isOpen={isRemoveUserDialogOpen}
+                onOpenChange={setIsRemoveUserDialogOpen}
+                user={selectedUser}
+                onConfirm={handleRemoveUser}
+            />
+         </>
+      )}
     </div>
   );
 }

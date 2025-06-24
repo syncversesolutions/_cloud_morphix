@@ -1,5 +1,5 @@
 
-import { doc, getDoc, setDoc, serverTimestamp, collection, writeBatch, query, where, getDocs, addDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, serverTimestamp, collection, writeBatch, query, where, getDocs, addDoc, updateDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 export interface UserProfile {
@@ -47,15 +47,12 @@ export async function getDashboardUrl(uid: string): Promise<string | null> {
                 return companyData.lookerUrl || null;
             }
         } catch (error: any) {
-            // Gracefully handle permission errors for non-admins.
-            // This is expected behavior as only admins can read the company document.
             if (error.code === 'permission-denied') {
                 console.log("User does not have permission to view company-level dashboard URL. This is expected for non-admins.");
                 return null;
             }
-            // For other errors, log them and let the caller handle it if necessary.
             console.error("An unexpected error occurred while fetching dashboard URL:", error);
-            return null; // Return null to prevent UI crash
+            return null; 
         }
     }
     return null;
@@ -100,35 +97,8 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
         created_at: serverTimestamp(),
     });
     
-    // The initial "Admin" role is created on the first visit to the user management page.
     await batch.commit();
 }
-
-// This function is now deprecated in favor of the invite flow.
-// It is kept for reference but should not be used.
-export async function createUserUnderCompany(userData: any): Promise<void> {
-    const companyRef = doc(db, "companies", userData.companyId);
-    const companySnap = await getDoc(companyRef);
-
-    if (!companySnap.exists()) {
-        const error = new Error("Company ID not found");
-        (error as any).code = 'firestore/not-found';
-        throw error;
-    }
-
-    const userRef = doc(db, "users", userData.uid);
-
-    await setDoc(userRef, {
-        user_id: userData.uid,
-        full_name: userData.fullName,
-        email: userData.email,
-        company_id: userData.companyId,
-        role: userData.role,
-        created_at: serverTimestamp(),
-    });
-}
-
-// --- New Functions for User/Role Management ---
 
 export async function getCompanyUsers(companyId: string): Promise<UserProfile[]> {
     const usersRef = collection(db, "users");
@@ -166,7 +136,6 @@ export async function getCompanyRoles(companyId: string): Promise<string[]> {
     querySnapshot.forEach((doc) => {
         roles.push(doc.data().name);
     });
-    // Remove duplicates before returning
     const uniqueRoles = [...new Set(roles)];
     return uniqueRoles.sort();
 }
@@ -201,8 +170,6 @@ export async function createInitialAdminRole(companyId: string): Promise<void> {
         });
     }
 }
-
-// --- Invite Acceptance Flow ---
 
 export async function getInviteDetails(companyId: string, inviteId: string): Promise<Invite | null> {
     const inviteRef = doc(db, "companies", companyId, "invites", inviteId);
@@ -252,13 +219,11 @@ export async function acceptInvite({ companyId, inviteId, user, role, companyNam
         newUserProfileData.company_name = companyName;
     }
 
-    // Create the new user document
     batch.set(userRef, {
         ...newUserProfileData,
         created_at: serverTimestamp(),
     });
 
-    // Update the invite status to 'accepted' and add audit fields
     batch.update(inviteRef, {
         status: 'accepted',
         accepted_at: serverTimestamp(),
@@ -280,4 +245,28 @@ export async function updateUserProfile(uid: string, data: { full_name: string; 
     }
     
     await updateDoc(userRef, updateData);
+}
+
+/**
+ * Updates the role of a specific user.
+ * This function can only be called by an authenticated Admin user.
+ * @param uid The ID of the user to update.
+ * @param newRole The new role to assign to the user.
+ */
+export async function updateUserRole(uid: string, newRole: string): Promise<void> {
+    const userRef = doc(db, "users", uid);
+    await updateDoc(userRef, {
+        role: newRole
+    });
+}
+
+/**
+ * Removes a user from the company by deleting their user profile document.
+ * This revokes their access to the company's data. Note: this does not
+ * delete their Firebase Authentication account.
+ * @param uid The ID of the user to remove.
+ */
+export async function removeUserFromCompany(uid: string): Promise<void> {
+    const userRef = doc(db, "users", uid);
+    await deleteDoc(userRef);
 }

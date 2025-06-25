@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { ShieldPlus, UserPlus, Copy, Check, MoreHorizontal } from "lucide-react";
+import { ShieldPlus, UserPlus, Copy, Check, MoreHorizontal, AlertTriangle } from "lucide-react";
 import ManageRolesDialog from "@/components/dashboard/manage-roles-dialog";
 import InviteUserDialog from "@/components/dashboard/invite-user-dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -35,6 +35,7 @@ export default function UserManagementPage() {
   const [invites, setInvites] = useState<Invite[]>([]);
   const [roles, setRoles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
   const [isRolesDialogOpen, setIsRolesDialogOpen] = useState(false);
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
   const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
@@ -48,43 +49,14 @@ export default function UserManagementPage() {
   const fetchUsersAndRoles = useCallback(async () => {
     if (!companyId) return;
     setLoading(true);
+    setPermissionError(null);
     try {
-      let fetchedUsers: UserProfile[] = [];
-      try {
-          fetchedUsers = await getCompanyUsers(companyId);
-      } catch (error) {
-          console.error("Failed to fetch company users:", error);
-          toast({
-            variant: "destructive",
-            title: "Error Fetching Users",
-            description: "Could not fetch company users. Please check your security rules.",
-          });
-      }
-
-      let fetchedRoles: string[] = [];
-      try {
-          fetchedRoles = await getCompanyRoles(companyId);
-      } catch (error) {
-          console.error("Failed to fetch company roles:", error);
-          toast({
-            variant: "destructive",
-            title: "Error Fetching Roles",
-            description: "Could not fetch company roles. Please check your security rules.",
-          });
-      }
-
-      let fetchedInvites: Invite[] = [];
-      try {
-          fetchedInvites = await getCompanyInvites(companyId);
-      } catch (error) {
-          console.error("Failed to fetch company invites:", error);
-          toast({
-            variant: "destructive",
-            title: "Error Fetching Invites",
-            description: "Could not fetch company invites. Please check your security rules.",
-          });
-      }
-
+      const [fetchedUsers, fetchedRoles, fetchedInvites] = await Promise.all([
+        getCompanyUsers(companyId),
+        getCompanyRoles(companyId),
+        getCompanyInvites(companyId)
+      ]);
+      
       let currentRoles = fetchedRoles;
       if (currentRoles.length === 0 && userProfile && user) {
         const actor = { id: user.uid, name: userProfile.profile.name, email: userProfile.profile.email };
@@ -93,18 +65,21 @@ export default function UserManagementPage() {
       }
       
       const uniqueRoles = [...new Set(currentRoles)];
-
       setUsers(fetchedUsers);
       setInvites(fetchedInvites);
       setRoles(uniqueRoles.sort());
 
     } catch (error: any) {
-      console.error("Failed to fetch data:", error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "An unexpected error occurred while loading user data.",
-      });
+      console.error("Failed to fetch user management data:", error);
+      if (error.code === 'permission-denied' || error.code === 'failed-precondition') {
+         setPermissionError("Could not fetch company data. Please ensure your Firestore security rules allow administrative access to read users, roles, and invites within a company.");
+      } else {
+        toast({
+            variant: "destructive",
+            title: "Error",
+            description: "An unexpected error occurred while loading user data.",
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -256,81 +231,92 @@ export default function UserManagementPage() {
           <CardDescription>A list of all users in your company, including pending invitations.</CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Full Name</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Status / Role</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {allTeamMembers.length > 0 ? (
-                allTeamMembers.map((member) => (
-                  <TableRow key={member.id}>
-                    <TableCell className="font-medium">{member.fullName}</TableCell>
-                    <TableCell>{member.email}</TableCell>
-                    <TableCell>
-                      {member.type === 'user' ? (
-                        <Badge variant={member.role === 'Admin' ? 'default' : 'secondary'}>{member.role}</Badge>
-                      ) : (
-                        <Badge variant="outline">Pending Invitation</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                        {member.type === 'invite' && member.inviteId && (
-                            <Button variant="ghost" size="sm" onClick={() => handleCopyInviteLink(member.inviteId!)}>
-                                {copiedInviteId === member.inviteId ? <Check className="mr-2 text-green-500" /> : <Copy className="mr-2" />}
-                                Copy Link
-                            </Button>
-                        )}
-                        {member.type === 'user' && userProfile.id !== member.id && (
-                           <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" className="h-8 w-8 p-0">
-                                <span className="sr-only">Open menu</span>
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  if (member.originalProfile) {
-                                      setSelectedUser(member.originalProfile);
-                                      setIsChangeRoleDialogOpen(true);
-                                  }
-                                }}
-                              >
-                                Change Role
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                className="text-destructive"
-                                onClick={() => {
-                                  if (member.originalProfile) {
-                                    setSelectedUser(member.originalProfile);
-                                    setIsRemoveUserDialogOpen(true);
-                                  }
-                                }}
-                              >
-                                Remove User
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )}
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
+          {permissionError ? (
+            <div className="p-8 text-center">
+                <AlertTriangle className="mx-auto h-12 w-12 text-destructive" />
+                <h3 className="mt-4 text-lg font-semibold text-destructive">Permissions Error</h3>
+                <p className="mt-2 text-sm text-muted-foreground">{permissionError}</p>
+                 <Button variant="outline" onClick={fetchUsersAndRoles} className="mt-4">
+                    Retry
+                 </Button>
+            </div>
+           ) : (
+            <Table>
+                <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={4} className="h-24 text-center">
-                    No users found.
-                  </TableCell>
+                    <TableHead>Full Name</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Status / Role</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
+                </TableHeader>
+                <TableBody>
+                {allTeamMembers.length > 0 ? (
+                    allTeamMembers.map((member) => (
+                    <TableRow key={member.id}>
+                        <TableCell className="font-medium">{member.fullName}</TableCell>
+                        <TableCell>{member.email}</TableCell>
+                        <TableCell>
+                        {member.type === 'user' ? (
+                            <Badge variant={member.role === 'Admin' ? 'default' : 'secondary'}>{member.role}</Badge>
+                        ) : (
+                            <Badge variant="outline">Pending Invitation</Badge>
+                        )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                            {member.type === 'invite' && member.inviteId && (
+                                <Button variant="ghost" size="sm" onClick={() => handleCopyInviteLink(member.inviteId!)}>
+                                    {copiedInviteId === member.inviteId ? <Check className="mr-2 text-green-500" /> : <Copy className="mr-2" />}
+                                    Copy Link
+                                </Button>
+                            )}
+                            {member.type === 'user' && userProfile.id !== member.id && (
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" className="h-8 w-8 p-0">
+                                    <span className="sr-only">Open menu</span>
+                                    <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                    onClick={() => {
+                                    if (member.originalProfile) {
+                                        setSelectedUser(member.originalProfile);
+                                        setIsChangeRoleDialogOpen(true);
+                                    }
+                                    }}
+                                >
+                                    Change Role
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                    className="text-destructive"
+                                    onClick={() => {
+                                    if (member.originalProfile) {
+                                        setSelectedUser(member.originalProfile);
+                                        setIsRemoveUserDialogOpen(true);
+                                    }
+                                    }}
+                                >
+                                    Remove User
+                                </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                            )}
+                        </TableCell>
+                    </TableRow>
+                    ))
+                ) : (
+                    <TableRow>
+                    <TableCell colSpan={4} className="h-24 text-center">
+                        No users have been added to this company yet.
+                    </TableCell>
+                    </TableRow>
+                )}
+                </TableBody>
+            </Table>
+           )}
         </CardContent>
       </Card>
       

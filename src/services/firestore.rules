@@ -1,0 +1,76 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- Helper Functions ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // --- Rules ---
+    match /contacts/{contactId} {
+      allow create: if true;
+      // Allow platform admins to read/write contact form submissions.
+      allow read, write: if isSignedIn() && get(/databases/$(database)/documents/companies/$(get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId)).data.company_name == 'Cloud Morphix';
+    }
+
+    match /user_company_lookup/{userId} {
+      allow read, create: if isOwner(userId);
+      // Lookups cannot be changed or deleted.
+      allow update, delete: if false;
+    }
+
+    match /companies/{companyId} {
+      // Allow a signed-in user to create a company, but only if they don't already belong to one.
+      allow create: if isSignedIn() && !exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid));
+      
+      // Allow members of a company to read the company document.
+      allow read: if isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId;
+      
+      // Allow updates only by users with the 'manage_roles' permission.
+      allow update: if isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId && ('manage_roles' in get(/databases/$(database)/documents/companies/$(companyId)/roles/$(get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role)).data.allowed_actions);
+      
+      // Disallow deleting companies from the client.
+      allow delete: if false;
+
+      // --- Sub-Collections ---
+
+      match /users/{userId} {
+        allow read: if isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId;
+        allow create: if isOwner(userId); // Allow user to create their own record during registration/invite.
+        // Allow user to update their own profile, or allow an admin to update any profile.
+        allow update: if isOwner(userId) || (isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId && 'manage_users' in get(/databases/$(database)/documents/companies/$(companyId)/roles/$(get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role)).data.allowed_actions);
+        allow delete: if isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId && 'manage_users' in get(/databases/$(database)/documents/companies/$(companyId)/roles/$(get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role)).data.allowed_actions;
+      }
+
+      match /roles/{roleName} {
+        allow read: if isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId;
+        // Allow role creation during company setup OR if user has permission.
+        allow create: if (request.resource == null) || (isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId && 'manage_roles' in get(/databases/$(database)/documents/companies/$(companyId)/roles/$(get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role)).data.allowed_actions);
+        allow update, delete: if isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId && 'manage_roles' in get(/databases/$(database)/documents/companies/$(companyId)/roles/$(get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role)).data.allowed_actions;
+      }
+
+      match /invites/{inviteId} {
+        // Allow ANYONE to read a single invite. This is required for the invite flow to work for new users.
+        // It is secure because invite IDs are unique and unguessable.
+        allow get: if true; 
+        
+        // Only allow company members to LIST all invites.
+        allow list: if isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId;
+        allow create: if isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId && 'manage_users' in get(/databases/$(database)/documents/companies/$(companyId)/roles/$(get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role)).data.allowed_actions;
+        allow update: if isOwner(request.resource.data.accepted_by_uid) || (isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId && 'manage_users' in get(/databases/$(database)/documents/companies/$(companyId)/roles/$(get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role)).data.allowed_actions);
+        allow delete: if isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId && 'manage_users' in get(/databases/$(database)/documents/companies/$(companyId)/roles/$(get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role)).data.allowed_actions;
+      }
+
+      match /audit_logs/{logId} {
+        allow read, create: if isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId;
+        // Logs are immutable.
+        allow update, delete: if false;
+      }
+    }
+  }
+}

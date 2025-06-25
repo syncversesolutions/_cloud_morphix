@@ -3,41 +3,78 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    function isUserAuthenticated() { return request.auth != null; }
-    function isUserProfileOwner(userId) { return request.auth.uid == userId; }
-    function getUserData() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
-    function getUserCompanyId() { return getUserData().company.id; }
-    function isUserAdmin() { return getUserData().company.role == 'Admin'; }
-    function isUserInCompany(companyId) { return isUserAuthenticated() && getUserCompanyId() == companyId; }
+    // Helper functions to make rules reusable and readable.
+    function isUserAuthenticated() {
+      return request.auth != null;
+    }
 
+    function isUserProfileOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function getUserCompanyId() {
+      return getUserData().company.id;
+    }
+    
+    function isUserAdmin() {
+      return getUserData().company.role == 'Admin';
+    }
+
+    function isUserInCompany(companyId) {
+      return isUserAuthenticated() && getUserCompanyId() == companyId;
+    }
+
+    // USERS collection rules
     match /users/{userId} {
+      // A user can create their own document during sign-up.
       allow create: if isUserAuthenticated();
       
-      // CORRECTED: This rule now properly allows an admin to list all users in their company.
-      allow read: if isUserProfileOwner(userId) || (isUserAdmin() && resource.data.company.id == getUserCompanyId());
-      
+      // CORRECTED RULE for reading user data.
+      // A user can read their own profile.
+      // Any user can read the profile of another user IF they are in the same company.
+      // This avoids complex/nested 'get' calls and should work for collection queries.
+      allow read: if isUserProfileOwner(userId) || 
+                   (isUserAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.company.id == resource.data.company.id);
+
+      // A user can only update their own 'profile' map.
+      // An admin can update another user's 'company.role'.
       allow update: if (isUserProfileOwner(userId) && request.resource.data.keys().hasOnly(['profile']))
                    || (isUserAdmin() && isUserInCompany(get(/databases/$(database)/documents/users/$(userId)).data.company.id) && request.resource.data.keys().hasOnly(['company']));
-                   
+
+      // Only an admin can remove a user from the company.
       allow delete: if isUserAdmin() && isUserInCompany(get(/databases/$(database)/documents/users/$(userId)).data.company.id);
     }
 
+    // COMPANIES collection rules
     match /companies/{companyId} {
       allow create: if isUserAuthenticated();
       allow read: if isUserInCompany(companyId);
       allow update: if isUserAdmin() && isUserInCompany(companyId);
-      allow delete: if false;
+      allow delete: if false; // Deleting companies should be an administrative server-side task.
 
-      // SUBCOLLECTIONS
+      // SUBCOLLECTION rules
+      
+      // Roles are now an array on the company document, so no subcollection is needed.
+      
+      // INVITES subcollection
       match /invites/{inviteId} {
-          // CORRECTED: Allows admins to read all invites, not just pending ones.
+          // Admins can read invites. Public can read pending invites (for accepting).
           allow read: if (isUserAdmin() && isUserInCompany(companyId)) || resource.data.status == 'pending';
+          // Admins can create invites.
           allow create: if isUserAdmin() && isUserInCompany(companyId);
+          // Anyone can update an invite to accept it.
           allow update: if request.resource.data.status == 'accepted';
       }
       
+      // AUDIT LOGS subcollection
       match /audit_logs/{logId} {
+        // Only admins can read the audit logs.
         allow read: if isUserAdmin() && isUserInCompany(companyId);
+        // Logs are write-only from the backend service.
         allow write: if false;
       }
     }

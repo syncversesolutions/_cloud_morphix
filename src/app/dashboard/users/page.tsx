@@ -16,6 +16,7 @@ import LoadingSpinner from "@/components/loading-spinner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import ChangeRoleDialog from "@/components/dashboard/change-role-dialog";
 import RemoveUserDialog from "@/components/dashboard/remove-user-dialog";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 
 type TeamMember = {
     id: string;
@@ -72,7 +73,7 @@ export default function UserManagementPage() {
     } catch (error: any) {
       console.error("Failed to fetch user management data:", error);
       if (error.code === 'permission-denied' || error.code === 'failed-precondition') {
-         setPermissionError("Could not fetch company data. Please ensure your Firestore security rules allow administrative access to read users, roles, and invites within a company.");
+         setPermissionError("You do not have permission to view this data. Please contact your administrator or check your Firestore security rules.");
       } else {
         toast({
             variant: "destructive",
@@ -232,14 +233,16 @@ export default function UserManagementPage() {
         </CardHeader>
         <CardContent>
           {permissionError ? (
-            <div className="p-8 text-center">
-                <AlertTriangle className="mx-auto h-12 w-12 text-destructive" />
-                <h3 className="mt-4 text-lg font-semibold text-destructive">Permissions Error</h3>
-                <p className="mt-2 text-sm text-muted-foreground">{permissionError}</p>
-                 <Button variant="outline" onClick={fetchUsersAndRoles} className="mt-4">
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Permission Error</AlertTitle>
+              <AlertDescription>
+                {permissionError}
+                 <Button variant="secondary" onClick={fetchUsersAndRoles} size="sm" className="mt-4">
                     Retry
                  </Button>
-            </div>
+              </AlertDescription>
+            </Alert>
            ) : (
             <Table>
                 <TableHeader>

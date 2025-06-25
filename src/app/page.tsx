@@ -91,7 +91,7 @@ export default function LandingPage() {
             </p>
             <div className="mt-10">
               <Button asChild size="lg" className="px-10 py-6 text-lg">
-                <Link href="/register">Book a Demo</Link>
+                <Link href="/contact">Book a Demo</Link>
               </Button>
             </div>
           </div>
@@ -173,7 +173,7 @@ export default function LandingPage() {
                 </div>
                  <div className="mt-16 text-center">
                     <Button asChild size="lg" className="px-10 py-6 text-lg">
-                        <Link href="/register">Book a Demo</Link>
+                        <Link href="/contact">Book a Demo</Link>
                     </Button>
                 </div>
             </div>

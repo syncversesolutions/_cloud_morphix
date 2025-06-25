@@ -29,7 +29,7 @@ export default function LandingHeader() {
                     <Link href="/login" onClick={handleLinkClick}>Login</Link>
                 </Button>
                 <Button asChild className="w-full md:w-auto">
-                    <Link href="/register" onClick={handleLinkClick}>Book a Demo</Link>
+                    <Link href="/contact" onClick={handleLinkClick}>Book a Demo</Link>
                 </Button>
             </div>
         )}

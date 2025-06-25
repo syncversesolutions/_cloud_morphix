@@ -261,31 +261,36 @@ export async function getCompanyUsers(companyId: string): Promise<UserProfile[]>
 
 export async function getCompanyInvites(companyId: string, showAll: boolean = false): Promise<Invite[]> {
     const invitesRef = collection(db, "companies", companyId, "invites");
-    
-    const q = showAll 
-      ? query(invitesRef, orderBy("created_at", "desc"))
-      : query(invitesRef, where("status", "==", "pending"), orderBy("created_at", "desc"));
-
+    // Fetch all invites ordered by date, then filter in code.
+    // This avoids needing a composite index on 'status' and 'created_at'.
+    const q = query(invitesRef, orderBy("created_at", "desc"));
     const querySnapshot = await getDocs(q);
     
-    const invites: Invite[] = [];
+    let invites: Invite[] = [];
     querySnapshot.forEach((doc) => {
         invites.push({ invite_id: doc.id, ...doc.data() } as Invite);
     });
-    return invites;
+
+    if (showAll) {
+        return invites;
+    }
+
+    // Filter for pending invites if required.
+    return invites.filter(invite => invite.status === 'pending');
 }
 
 // Fetches roles from the sub-collection.
 export async function getCompanyRoles(companyId: string): Promise<Role[]> {
     const rolesRef = collection(db, "companies", companyId, "roles");
-    const rolesSnap = await getDocs(query(rolesRef, orderBy("role_name")));
+    // Remove orderBy clause to prevent potential index issues. The list is small.
+    const rolesSnap = await getDocs(rolesRef);
     
     const roles: Role[] = [];
     rolesSnap.forEach((doc) => {
         // The role name is now the ID, so we use doc.id for the 'id' field
         roles.push({ id: doc.id, ...doc.data() } as Role);
     });
-    return roles;
+    return roles.sort((a, b) => a.role_name.localeCompare(b.role_name));
 }
 
 // Adds a new role document to the sub-collection, using the role name as the ID.

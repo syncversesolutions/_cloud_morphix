@@ -90,8 +90,7 @@ export async function getDashboardUrl(uid: string): Promise<string | null> {
     } catch (error: any) {
         // This is expected for non-admins if rules are strict.
         if (error.code === 'permission-denied') {
-            console.log("Permission denied to fetch company-level dashboard URL. This is expected for non-admins.");
-            throw error; // Re-throw to be handled by the caller
+          setPermissionError(true);
         } else {
              console.error("An unexpected error occurred while fetching dashboard URL:", error);
         }
@@ -124,7 +123,6 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
 
     // UPDATED: Write company document with new nested structure
     batch.set(companyRef, {
-        id: companyRef.id,
         createdAt: serverTimestamp(),
         companyInfo: {
             name: companyData.company_name,
@@ -144,7 +142,6 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
     });
 
     batch.set(userRef, {
-        id: adminData.uid,
         createdAt: serverTimestamp(),
         profile: {
             name: adminData.fullName,
@@ -189,7 +186,6 @@ export async function createUserUnderCompany({
     const companyData = companySnap.data();
 
     await setDoc(userRef, {
-        id: uid,
         createdAt: serverTimestamp(),
         profile: {
             name: fullName,
@@ -295,9 +291,21 @@ export async function getInviteDetails(companyId: string, inviteId: string): Pro
     const inviteSnap = await getDoc(inviteRef);
 
     if (inviteSnap.exists()) {
+        const inviteData = inviteSnap.data();
+        const companyName = inviteData.companyName;
+
+        // If companyName is missing in the invite, fetch it from the company doc as a fallback.
+        if (!companyName) {
+            const companyRef = doc(db, "companies", companyId);
+            const companySnap = await getDoc(companyRef);
+            if (companySnap.exists()) {
+                inviteData.companyName = companySnap.data().companyInfo?.name || "Your Company";
+            }
+        }
+        
         return { 
             invite_id: inviteSnap.id,
-            ...(inviteSnap.data() as Omit<Invite, 'invite_id'>)
+            ...(inviteData as Omit<Invite, 'invite_id'>)
         };
     }
     return null;
@@ -322,7 +330,6 @@ export async function acceptInvite({ companyId, inviteId, user, role, companyNam
     const batch = writeBatch(db);
 
     batch.set(userRef, {
-        id: user.uid,
         createdAt: serverTimestamp(),
         profile: {
             name: user.fullName,

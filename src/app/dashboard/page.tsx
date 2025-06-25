@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import DashboardEmbed from "@/components/dashboard/dashboard-embed";
@@ -15,6 +15,7 @@ export default function DashboardPage() {
   const { toast } = useToast();
   const [dashboardUrl, setDashboardUrl] = useState<string | null>(null);
   const [loadingUrl, setLoadingUrl] = useState(true);
+  const [permissionError, setPermissionError] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -22,32 +23,61 @@ export default function DashboardPage() {
     }
   }, [user, authLoading, router]);
 
+  const fetchUrlWithRetry = useCallback((retries = 3, delay = 500) => {
+    if (!user) return;
+    
+    getDashboardUrl(user.uid)
+      .then((url) => {
+        setDashboardUrl(url);
+        setPermissionError(false);
+      })
+      .catch((error: any) => {
+        if (error.code === 'permission-denied' && retries > 0) {
+          console.warn(`Permission denied fetching dashboard URL, retrying in ${delay}ms... (${retries} retries left)`);
+          setTimeout(() => fetchUrlWithRetry(retries - 1, delay), delay);
+        } else {
+          console.error("Failed to get dashboard URL:", error);
+          if (error.code === 'permission-denied') {
+            setPermissionError(true);
+          } else {
+            toast({
+              variant: "destructive",
+              title: "Dashboard Error",
+              description: "Could not load the dashboard configuration.",
+            });
+          }
+        }
+      })
+      .finally(() => {
+         if (retries === 0 || !error.code || error.code !== 'permission-denied') {
+            setLoadingUrl(false);
+         }
+      });
+  }, [user, toast]);
+
   useEffect(() => {
     if (user) {
-      getDashboardUrl(user.uid)
-        .then((url) => {
-          setDashboardUrl(url);
-        })
-        .catch((error: any) => {
-          console.error("Failed to get dashboard URL:", error);
-          toast({
-            variant: "destructive",
-            title: "Dashboard Error",
-            description: error.code === 'permission-denied' 
-              ? "You do not have permission to view this dashboard. Please contact your administrator."
-              : "Could not load the dashboard configuration.",
-          });
-        })
-        .finally(() => {
-          setLoadingUrl(false);
-        });
+      setLoadingUrl(true);
+      fetchUrlWithRetry();
     } else if (!authLoading) {
       setLoadingUrl(false);
     }
-  }, [user, authLoading, toast]);
+  }, [user, authLoading, fetchUrlWithRetry]);
 
   if (authLoading || loadingUrl) {
     return <LoadingSpinner />;
+  }
+
+  if (permissionError) {
+      return (
+        <div className="container mx-auto p-4 sm:p-6 lg:p-8">
+            <h2 className="mb-4 text-3xl font-bold tracking-tight font-headline">Dashboard Unavailable</h2>
+            <p className="text-muted-foreground">
+                You do not have permission to view the dashboard for this organization. 
+                Please contact your administrator to request access.
+            </p>
+        </div>
+      )
   }
   
   return (

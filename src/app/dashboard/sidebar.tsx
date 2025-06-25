@@ -7,35 +7,38 @@ import { cn } from "@/lib/utils";
 import { LayoutDashboard, UsersRound, CircleUser, MailQuestion } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
+// Define navigation links with required permissions
 const navLinks = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, adminOnly: false },
-  { href: "/dashboard/profile", label: "Profile", icon: CircleUser, adminOnly: false },
-  { href: "/dashboard/users", label: "Users", icon: UsersRound, adminOnly: true },
-  { href: "/dashboard/enquiries", label: "Enquiries", icon: MailQuestion, adminOnly: true },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, requiredPermission: null },
+  { href: "/dashboard/profile", label: "Profile", icon: CircleUser, requiredPermission: null },
+  { href: "/dashboard/users", label: "Users", icon: UsersRound, requiredPermission: "manage_users" },
+  { href: "/dashboard/enquiries", label: "Enquiries", icon: MailQuestion, platformAdminOnly: true },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
   const { userProfile } = useAuth();
-  const isAdmin = userProfile?.role === "Admin";
+  
   // A platform admin is an Admin of the "Cloud Morphix" company.
-  const isPlatformAdmin = isAdmin && userProfile?.companyName === "Cloud Morphix";
+  const isPlatformAdmin = userProfile?.role === "Admin" && userProfile?.companyName === "Cloud Morphix";
+  const userPermissions = userProfile?.allowed_actions || [];
 
   return (
     <aside className="w-64 flex-shrink-0 border-r border-border/60 bg-background p-4">
       <nav className="flex flex-col gap-2">
         {navLinks.map((link) => {
-          // General check: hide all admin links if user is not an admin.
-          if (link.adminOnly && !isAdmin) {
-            return null;
-          }
-          
-          // Stricter check for Enquiries: Must be a platform admin.
-          if (link.href === '/dashboard/enquiries' && !isPlatformAdmin) {
-            return null;
-          }
-          
           const isActive = pathname === link.href;
+
+          // Check for platform admin requirement
+          if (link.platformAdminOnly && !isPlatformAdmin) {
+            return null;
+          }
+
+          // Check for specific permission requirement
+          if (link.requiredPermission && !userPermissions.includes(link.requiredPermission)) {
+            return null;
+          }
+          
           return (
             <Link
               key={link.href}

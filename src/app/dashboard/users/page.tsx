@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useAuth, type UserProfile } from "@/hooks/use-auth";
-import { getCompanyUsers, getCompanyRoles, addRole, createInvite, createInitialAdminRole, getCompanyInvites, type Invite, updateUserRole, removeUserFromCompany } from "@/services/firestore";
+import { getCompanyUsers, getCompanyRoles, addRole, createInvite, getCompanyInvites, type Invite, updateUserRole, removeUserFromCompany, type Role } from "@/services/firestore";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -30,13 +30,12 @@ type TeamMember = {
 };
 
 export default function UserManagementPage() {
-  const { user, userProfile, loading: authLoading } = useAuth();
+  const { user, userProfile, loading: authLoading, refreshUserProfile } = useAuth();
   const { toast } = useToast();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
-  const [roles, setRoles] = useState<string[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
-  const [permissionError, setPermissionError] = useState<string | null>(null);
   const [isRolesDialogOpen, setIsRolesDialogOpen] = useState(false);
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
   const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
@@ -46,11 +45,12 @@ export default function UserManagementPage() {
   const [isRemoveUserDialogOpen, setIsRemoveUserDialogOpen] = useState(false);
 
   const companyId = userProfile?.companyId;
+  const canManageUsers = userProfile?.allowed_actions?.includes('manage_users');
+  const canManageRoles = userProfile?.allowed_actions?.includes('manage_roles');
 
   const fetchUsersAndRoles = useCallback(async () => {
     if (!companyId) return;
     setLoading(true);
-    setPermissionError(null);
     try {
       const [fetchedUsers, fetchedRoles, fetchedInvites] = await Promise.all([
         getCompanyUsers(companyId),
@@ -58,49 +58,39 @@ export default function UserManagementPage() {
         getCompanyInvites(companyId, false) // Only fetch pending invites
       ]);
       
-      let currentRoles = fetchedRoles;
-      if (currentRoles.length === 0 && userProfile && user) {
-        const actor = { id: user.uid, name: userProfile.fullName, email: userProfile.email };
-        await createInitialAdminRole(companyId, actor);
-        currentRoles = await getCompanyRoles(companyId);
-      }
-      
-      const uniqueRoles = [...new Set(currentRoles)];
       setUsers(fetchedUsers);
       setInvites(fetchedInvites);
-      setRoles(uniqueRoles.sort());
+      setRoles(fetchedRoles);
 
     } catch (error: any) {
       console.error("Failed to fetch user management data:", error);
-      if (error.code === 'permission-denied' || error.code === 'failed-precondition') {
-         setPermissionError("You do not have the required permissions to manage users. Please contact your administrator or ensure your Firestore security rules are configured correctly for admin access.");
-      } else {
-        toast({
-            variant: "destructive",
-            title: "Error",
-            description: "An unexpected error occurred while loading user data.",
-        });
-      }
+      toast({
+          variant: "destructive",
+          title: "Error",
+          description: "An unexpected error occurred while loading user data.",
+      });
     } finally {
       setLoading(false);
     }
-  }, [companyId, toast, user, userProfile]);
+  }, [companyId, toast]);
 
   useEffect(() => {
-    if (companyId) {
+    if (companyId && canManageUsers) {
       fetchUsersAndRoles();
+    } else {
+        setLoading(false);
     }
-  }, [companyId, fetchUsersAndRoles]);
+  }, [companyId, canManageUsers, fetchUsersAndRoles]);
 
   const getActor = () => {
       if (!user || !userProfile) return null;
       return { id: user.uid, name: userProfile.fullName, email: userProfile.email };
   }
 
-  const handleAddRole = async (roleName: string) => {
+  const handleAddRole = async (roleName: string, permissions: string[]) => {
     const actor = getActor();
     if (!companyId || !actor) return false;
-    if (roles.map(r => r.toLowerCase()).includes(roleName.toLowerCase())) {
+    if (roles.some(r => r.role_name.toLowerCase() === roleName.toLowerCase())) {
         toast({
             variant: "destructive",
             title: "Duplicate Role",
@@ -109,7 +99,7 @@ export default function UserManagementPage() {
         return false;
     }
     try {
-      await addRole(companyId, roleName, actor);
+      await addRole(companyId, roleName, permissions, actor);
       toast({ title: "Success", description: `Role "${roleName}" added.` });
       fetchUsersAndRoles();
       return true;
@@ -148,6 +138,10 @@ export default function UserManagementPage() {
     try {
       await updateUserRole(selectedUser.id, newRole, actor, companyId);
       toast({ title: "Success", description: `${selectedUser.fullName}'s role has been updated to ${newRole}.`});
+      // If the admin changes their own role, refresh their permissions.
+      if (selectedUser.id === userProfile?.id) {
+          await refreshUserProfile();
+      }
       fetchUsersAndRoles();
       return true;
     } catch (error) {
@@ -174,14 +168,14 @@ export default function UserManagementPage() {
     return <LoadingSpinner />;
   }
 
-  if (userProfile?.role !== "Admin") {
+  if (!canManageUsers) {
     return (
       <div className="container mx-auto p-4 sm:p-6 lg:p-8">
         <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Access Denied</AlertTitle>
             <AlertDescription>
-                You must be an Administrator to access this page.
+                You do not have permission to manage users.
             </AlertDescription>
         </Alert>
       </div>
@@ -220,10 +214,12 @@ export default function UserManagementPage() {
             <p className="text-muted-foreground">Invite new users and manage roles for your company.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setIsRolesDialogOpen(true)}>
-            <ShieldPlus className="mr-2" />
-            Manage Roles
-          </Button>
+          {canManageRoles && (
+            <Button variant="outline" onClick={() => setIsRolesDialogOpen(true)}>
+              <ShieldPlus className="mr-2" />
+              Manage Roles
+            </Button>
+          )}
           <Button onClick={() => setIsInviteDialogOpen(true)}>
             <UserPlus className="mr-2" />
             Invite User
@@ -237,18 +233,6 @@ export default function UserManagementPage() {
           <CardDescription>A list of all users in your company, including pending invitations.</CardDescription>
         </CardHeader>
         <CardContent>
-          {permissionError ? (
-            <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>Permission Error</AlertTitle>
-              <AlertDescription>
-                {permissionError}
-                 <Button variant="secondary" onClick={fetchUsersAndRoles} size="sm" className="mt-4">
-                    Retry
-                 </Button>
-              </AlertDescription>
-            </Alert>
-           ) : (
             <Table>
                 <TableHeader>
                 <TableRow>
@@ -324,7 +308,6 @@ export default function UserManagementPage() {
                 )}
                 </TableBody>
             </Table>
-           )}
         </CardContent>
       </Card>
       
@@ -338,7 +321,7 @@ export default function UserManagementPage() {
       <InviteUserDialog
         isOpen={isInviteDialogOpen}
         onOpenChange={setIsInviteDialogOpen}
-        roles={roles.filter(r => r !== 'Admin')} // Cannot assign Admin via invite
+        roles={roles.filter(r => r.role_name !== 'Admin')} // Cannot assign Admin via invite
         onInviteUser={handleInviteUser}
        />
        
@@ -362,5 +345,3 @@ export default function UserManagementPage() {
     </div>
   );
 }
-
-    

@@ -13,12 +13,13 @@ import {
 } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { UserProfile } from '@/hooks/use-auth';
+import type { Role } from '@/services/firestore';
 
 interface ChangeRoleDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   user: UserProfile;
-  roles: string[];
+  roles: Role[];
   onConfirm: (newRole: string) => Promise<boolean>;
 }
 
@@ -51,14 +52,14 @@ export default function ChangeRoleDialog({ isOpen, onOpenChange, user, roles, on
                 </SelectTrigger>
                 <SelectContent>
                 {roles.map((role) => (
-                    <SelectItem key={role} value={role} disabled={role === 'Admin'}>
-                        {role}
+                    <SelectItem key={role.id} value={role.role_name} disabled={role.role_name === 'Admin'}>
+                        {role.role_name}
                     </SelectItem>
                 ))}
                 </SelectContent>
             </Select>
             <p className="text-sm text-muted-foreground mt-2">
-                Note: The 'Admin' role cannot be assigned here.
+                Note: The 'Admin' role cannot be assigned or changed here.
             </p>
         </div>
         <DialogFooter>
@@ -75,5 +76,3 @@ export default function ChangeRoleDialog({ isOpen, onOpenChange, user, roles, on
     </Dialog>
   );
 }
-
-    

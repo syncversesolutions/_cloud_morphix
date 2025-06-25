@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from 'react';
@@ -16,6 +17,7 @@ import {
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import type { Role } from '@/services/firestore';
 
 const formSchema = z.object({
   fullName: z.string().min(2, 'Full name is required.'),
@@ -26,7 +28,7 @@ const formSchema = z.object({
 interface InviteUserDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
-  roles: string[];
+  roles: Role[];
   onInviteUser: (fullName: string, email: string, role: string) => Promise<boolean>;
 }
 
@@ -103,8 +105,8 @@ export default function InviteUserDialog({ isOpen, onOpenChange, roles, onInvite
                     </FormControl>
                     <SelectContent>
                       {roles.map((role) => (
-                        <SelectItem key={role} value={role}>
-                          {role}
+                        <SelectItem key={role.id} value={role.role_name}>
+                          {role.role_name}
                         </SelectItem>
                       ))}
                     </SelectContent>

@@ -9,6 +9,8 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
+import { db } from '@/lib/firebase';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 
 const ContactFormInputSchema = z.object({
   name: z.string().describe('The full name of the person submitting the form.'),
@@ -29,10 +31,18 @@ const contactFlow = ai.defineFlow(
     outputSchema: z.void(),
   },
   async (input) => {
-    // In a real application, you would add logic here to:
-    // 1. Save the contact information to a database (e.g., Firestore).
-    // 2. Send a notification email to the sales team.
-    // For this prototype, we'll just log the input to the console.
-    console.log('New contact form submission:', input);
+    // Save the contact information to a "contacts" collection in Firestore.
+    try {
+        const contactsCollection = collection(db, 'contacts');
+        await addDoc(contactsCollection, {
+            ...input,
+            submittedAt: serverTimestamp(),
+        });
+        console.log('Contact form submission saved to Firestore:', input);
+    } catch (error) {
+        console.error("Error saving contact form to Firestore:", error);
+        // Re-throw the error so the client can handle it.
+        throw new Error("Failed to save contact information.");
+    }
   }
 );

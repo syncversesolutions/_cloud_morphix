@@ -2,110 +2,105 @@
 rules_version = '2';
 
 service cloud.firestore {
-  database /databases/{database}/documents {
-    
+  match /databases/{database}/documents {
+
     // --- Helper Functions ---
-    
-    // Checks if the requesting user is a member of the given company.
-    function isCompanyMember(companyId) {
-      return exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)) &&
-             get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId;
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getCompanyId(userId) {
+      return get(/databases/$(database)/documents/user_company_lookup/$(userId)).data.companyId;
+    }
+
+    function isMemberOfCompany(companyId) {
+      // Check if user is signed in, has a lookup doc, and the doc points to the given companyId
+      return isSignedIn() &&
+             exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)) &&
+             getCompanyId(request.auth.uid) == companyId;
     }
     
-    // Checks if the user has a specific permission.
+    function getUserRole(userId, companyId) {
+        return get(/databases/$(database)/documents/companies/$(companyId)/users/$(userId)).data.role;
+    }
+
     function hasPermission(companyId, permission) {
-      let userProfile = get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data;
-      let roleDoc = get(/databases/$(database)/documents/companies/$(companyId)/roles/$(userProfile.role)).data;
-      // The 'in' operator checks for key existence in maps or item presence in lists.
-      // Since allowed_actions is a list, this correctly checks for the permission string.
-      return permission in roleDoc.allowed_actions;
+      // Check if user is a member and their role has the required permission
+      return isMemberOfCompany(companyId) &&
+             permission in get(/databases/$(database)/documents/companies/$(companyId)/roles/$(getUserRole(request.auth.uid, companyId))).data.allowed_actions;
     }
 
-    // Checks if the user is a "Cloud Morphix" platform admin.
     function isPlatformAdmin() {
-      // Ensure the user is authenticated and in the lookup table first.
-      let lookupPath = /databases/$(database)/documents/user_company_lookup/$(request.auth.uid);
-      if (!exists(lookupPath)) {
-        return false;
-      }
-      // Get company ID and then check company name.
-      let companyId = get(lookupPath).data.companyId;
-      let companyPath = /databases/$(database)/documents/companies/$(companyId);
-      if (!exists(companyPath)) {
-        return false;
-      }
-      return get(companyPath).data.company_name == "Cloud Morphix";
+      // Check if user is signed in, has a lookup doc, and their company name is 'Cloud Morphix'
+      return isSignedIn() &&
+             exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/companies/$(getCompanyId(request.auth.uid))).data.company_name == 'Cloud Morphix';
     }
 
-    // --- Collections ---
-
-    // Lookup table to find which company a user belongs to.
-    match /user_company_lookup/{userId} {
-      allow read, delete: if request.auth.uid == userId;
-      // Allow creation only for the authenticated user for their own lookup entry.
-      allow create: if request.auth.uid == userId;
+    function isOwner(userId) {
+        return isSignedIn() && request.auth.uid == userId;
     }
-
-    // Main companies collection.
-    match /companies/{companyId} {
-      // Any authenticated user can create a new company profile.
-      allow create: if request.auth.uid != null;
-      // Only members of the company can get the company document.
-      allow get: if isCompanyMember(companyId);
-      // Disallow all other top-level operations on company documents.
-      allow list, update, delete: if false;
-
-      // --- USERS Sub-collection ---
-      match /users/{userId} {
-        // A user can create their own document. This is required for registration and accepting invites.
-        allow create: if request.auth.uid == userId;
-        
-        // Reading is allowed for the user themselves, or for an admin with 'manage_users' permission.
-        allow get: if request.auth.uid == userId || hasPermission(companyId, 'manage_users');
-        allow list: if hasPermission(companyId, 'manage_users');
-        
-        // A user can update their own profile, or an admin can update other users' roles.
-        allow update: if request.auth.uid == userId || hasPermission(companyId, 'manage_users');
-
-        // Only an admin can remove a user, and they can't remove themselves.
-        allow delete: if hasPermission(companyId, 'manage_users') && request.auth.uid != userId;
-      }
-      
-      // --- ROLES Sub-collection ---
-      match /roles/{roleName} {
-        // Read is allowed for any company member.
-        allow get, list: if isCompanyMember(companyId);
-
-        // Write is allowed under two conditions:
-        // 1. An admin with 'manage_roles' permission is making changes.
-        // 2. The company document does not exist yet (i.e., it's being created in the same transaction). This handles initial role setup.
-        allow write: if hasPermission(companyId, 'manage_roles') || !exists(/databases/$(database)/documents/companies/$(companyId));
-      }
-      
-      // --- INVITES Sub-collection ---
-      match /invites/{inviteId} {
-        // Anyone with the link can read a specific invite to get its details for registration.
-        allow get: if true;
-        // Admins can list and create invites.
-        allow list, create: if hasPermission(companyId, 'manage_users');
-        // The invited user can update the invite status when they accept.
-        allow update: if request.auth.uid == request.resource.data.accepted_by_uid;
-      }
-      
-      // --- AUDIT LOGS Sub-collection ---
-      match /audit_logs/{logId} {
-        // Readable by company members, but not writable from the client.
-        allow read: if isCompanyMember(companyId);
-        allow write: if false;
-      }
-    }
-
-    // Demo request submissions.
+    
+    // --- Rules ---
     match /contacts/{contactId} {
-      // Anyone can submit the form.
       allow create: if true;
-      // Only platform admins can read/write contact submissions.
-      allow read, write: if isPlatformAdmin();
+      allow read, update, delete: if isPlatformAdmin();
+    }
+
+    match /user_company_lookup/{userId} {
+      allow read, create: if isOwner(userId);
+      allow update, delete: if false;
+    }
+
+    match /companies/{companyId} {
+      // Allow a user to create a company if they are authenticated and not already in one.
+      allow create: if isSignedIn() && !exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid));
+
+      allow read: if isMemberOfCompany(companyId);
+      
+      // Placeholder: only admins can update company info for now.
+      allow update: if hasPermission(companyId, 'manage_roles');
+
+      // --- Sub-Collections ---
+      match /users/{userId} {
+        allow read: if isMemberOfCompany(companyId);
+
+        // A user is created during registration or when accepting an invite. Must be self-creation.
+        allow create: if isOwner(userId);
+
+        // User can update their own profile. An admin can update any user's profile.
+        allow update: if isOwner(userId) || hasPermission(companyId, 'manage_users');
+
+        // An admin can remove a user.
+        allow delete: if hasPermission(companyId, 'manage_users');
+      }
+
+      match /roles/{roleName} {
+        allow read: if isMemberOfCompany(companyId);
+
+        // Allow role creation during company setup OR if user has permission.
+        allow create: if (!exists(/databases/$(database)/documents/companies/$(companyId))) || hasPermission(companyId, 'manage_roles');
+        
+        allow update, delete: if hasPermission(companyId, 'manage_roles');
+      }
+
+      match /invites/{inviteId} {
+        // Any signed-in user can read an invite to accept it, but only members can list all invites for their company.
+        allow get: if isSignedIn();
+        allow list: if isMemberOfCompany(companyId);
+
+        allow create: if hasPermission(companyId, 'manage_users');
+        
+        // An invite can be updated only by the person it was sent to, to accept it.
+        allow update: if isOwner(request.resource.data.accepted_by_uid) && resource.data.status == 'pending';
+        
+        allow delete: if hasPermission(companyId, 'manage_users');
+      }
+
+      match /audit_logs/{logId} {
+        allow read, create: if isMemberOfCompany(companyId);
+        allow update, delete: if false; // Logs are immutable
+      }
     }
   }
 }

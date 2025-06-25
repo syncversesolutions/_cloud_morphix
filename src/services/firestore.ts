@@ -113,11 +113,11 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
 
     // Fetch the permissions for the user's role
     if (userRoleName) {
-        const rolesRef = collection(db, "companies", companyId, "roles");
-        const roleQuery = query(rolesRef, where("role_name", "==", userRoleName));
-        const roleSnap = await getDocs(roleQuery);
-        if (!roleSnap.empty) {
-            const roleData = roleSnap.docs[0].data();
+        // Roles are now stored with the role name as the document ID.
+        const roleRef = doc(db, "companies", companyId, "roles", userRoleName);
+        const roleSnap = await getDoc(roleRef);
+        if (roleSnap.exists()) {
+            const roleData = roleSnap.data();
             allowed_actions = roleData.allowed_actions || [];
         }
     }
@@ -169,17 +169,17 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
         plan_expiry_date: null,
     });
     
-    // 2. Create default roles in the 'roles' sub-collection
+    // 2. Create default roles in the 'roles' sub-collection, using the role name as the ID.
     const rolesRef = collection(db, "companies", companyRef.id, "roles");
-    batch.set(doc(rolesRef), {
+    batch.set(doc(rolesRef, "Admin"), {
         role_name: "Admin",
         allowed_actions: availablePermissions.map(p => p.id), // All permissions
     });
-     batch.set(doc(rolesRef), {
+     batch.set(doc(rolesRef, "Viewer"), {
         role_name: "Viewer",
         allowed_actions: ["view_dashboard"],
     });
-     batch.set(doc(rolesRef), {
+     batch.set(doc(rolesRef, "Analyst"), {
         role_name: "Analyst",
         allowed_actions: ["view_dashboard"],
     });
@@ -208,24 +208,11 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
 
 export async function getCompanyUsers(companyId: string): Promise<UserProfile[]> {
     const usersRef = collection(db, "companies", companyId, "users");
-    const companyRef = doc(db, "companies", companyId);
-
-    const [usersSnapshot, companySnap] = await Promise.all([getDocs(usersRef), getDoc(companyRef)]);
+    const usersSnapshot = await getDocs(usersRef);
     
-    if (!companySnap.exists()) return [];
-    const companyName = companySnap.data()?.company_name || 'Unknown Company';
+    const userPromises = usersSnapshot.docs.map(doc => getUserProfile(doc.id));
+    const users = (await Promise.all(userPromises)).filter(p => p !== null) as UserProfile[];
     
-    const users: UserProfile[] = [];
-    usersSnapshot.forEach((doc) => {
-        const data = doc.data();
-        users.push({ 
-            id: doc.id,
-            companyId,
-            companyName,
-            allowed_actions: [], // Permissions will be fetched separately if needed for a list view
-            ...data
-         } as UserProfile);
-    });
     return users;
 }
 
@@ -233,8 +220,8 @@ export async function getCompanyInvites(companyId: string, showAll: boolean = fa
     const invitesRef = collection(db, "companies", companyId, "invites");
     
     const q = showAll 
-      ? query(invitesRef) 
-      : query(invitesRef, where("status", "==", "pending"));
+      ? query(invitesRef, orderBy("created_at", "desc"))
+      : query(invitesRef, where("status", "==", "pending"), orderBy("created_at", "desc"));
 
     const querySnapshot = await getDocs(q);
     
@@ -252,15 +239,16 @@ export async function getCompanyRoles(companyId: string): Promise<Role[]> {
     
     const roles: Role[] = [];
     rolesSnap.forEach((doc) => {
+        // The role name is now the ID, so we use doc.id for the 'id' field
         roles.push({ id: doc.id, ...doc.data() } as Role);
     });
     return roles;
 }
 
-// Adds a new role document to the sub-collection.
+// Adds a new role document to the sub-collection, using the role name as the ID.
 export async function addRole(companyId: string, roleName: string, permissions: string[], actor: Actor): Promise<void> {
-    const rolesRef = collection(db, "companies", companyId, "roles");
-    await addDoc(rolesRef, {
+    const roleRef = doc(db, "companies", companyId, "roles", roleName);
+    await setDoc(roleRef, {
         role_name: roleName,
         allowed_actions: permissions
     });
@@ -390,3 +378,4 @@ export async function getContacts(): Promise<Contact[]> {
 
     return contacts;
 }
+    

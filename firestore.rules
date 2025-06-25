@@ -1,63 +1,111 @@
 
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-  
-    // Helper function to check if a user is an admin of a given company.
-    function isCompanyAdmin(companyId, userId) {
-      let userRole = get(/databases/$(database)/documents/companies/$(companyId)/users/$(userId)).data.role;
-      return userRole == 'Admin';
-    }
 
-    // New lookup collection: Allows a user to manage their own lookup document.
-    match /user_company_lookup/{userId} {
-      allow read, create, update, delete: if request.auth.uid == userId;
-    }
-
-    // Main companies collection
-    match /companies/{companyId} {
-      // Allow read if user is part of the company's user sub-collection.
-      allow read: if exists(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid));
-      // Allow any authenticated user to create a new company.
-      allow create: if request.auth != null;
-      // Allow updates only by admins of that company.
-      allow update: if isCompanyAdmin(companyId, request.auth.uid);
-      
-      // Users sub-collection
-      match /users/{userId} {
-        // Allow reads by the user themselves or by a company admin.
-        allow read: if request.auth.uid == userId || isCompanyAdmin(companyId, request.auth.uid);
-        // Allow a user to create their own user document (on registration/invite accept).
-        allow create: if request.auth.uid == userId;
-        // Allow updates by the user themselves (for their profile) or by an admin.
-        allow update: if request.auth.uid == userId || isCompanyAdmin(companyId, request.auth.uid);
-        // Allow deletion only by an admin.
-        allow delete: if isCompanyAdmin(companyId, request.auth.uid);
-      }
-      
-      // Invites sub-collection
-      match /invites/{inviteId} {
-        // Allow anyone to read a specific invite document using its link.
-        allow get: if true;
-        // Allow admins to list invites, create new ones, and update them.
-        allow list, create, update, delete: if isCompanyAdmin(companyId, request.auth.uid);
-      }
-      
-      // Audit logs sub-collection (admin only)
-      match /audit_logs/{logId} {
-      	allow read, create: if isCompanyAdmin(companyId, request.auth.uid);
-      }
+    function isAuth() {
+      return request.auth != null;
     }
     
-    // Contact form submissions
+    // Check if user has a profile in the specified company
+    function userHasProfile(companyId, userId) {
+      let lookupPath = /databases/$(database)/documents/user_company_lookup/$(userId);
+      return exists(lookupPath) && get(lookupPath).data.companyId == companyId;
+    }
+    
+    // Get user permissions for a given company
+    function getPermissions(companyId) {
+      // NOTE: This requires that role documents are named after the role, e.g., /roles/Admin
+      let userRole = get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role;
+      return get(/databases/$(database)/documents/companies/$(companyId)/roles/$(userRole)).data.allowed_actions;
+    }
+    
+    // Check if user is an admin of the specified company
+    function isCompanyAdmin(companyId) {
+       let userRole = get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role;
+       return userRole == 'Admin';
+    }
+
+    // Check if user is a platform admin (Cloud Morphix Admin)
+    function isPlatformAdmin() {
+      if (!isAuth()) { return false; }
+      let lookupPath = /databases/$(database)/documents/user_company_lookup/$(request.auth.uid);
+      if (!exists(lookupPath)) { return false; }
+      let companyId = get(lookupPath).data.companyId;
+      let companyName = get(/databases/$(database)/documents/companies/$(companyId)).data.company_name;
+      return isCompanyAdmin(companyId) && companyName == 'Cloud Morphix';
+    }
+
+    match /companies/{companyId} {
+      // Allow creation of a new company document. The batch write ensures other docs are created too.
+      allow create: if isAuth();
+      
+      // Only allow reads/updates by users within that company.
+      allow read, update: if isAuth() && userHasProfile(companyId, request.auth.uid);
+
+      // --- SUBCOLLECTIONS ---
+
+      match /users/{userId} {
+        // Allow CREATE if:
+        // 1. A new user is registering (creating their own user document).
+        // 2. An existing user is accepting an invite (also creating their own document).
+        allow create: if isAuth() && request.auth.uid == userId;
+        
+        // Allow READ/LIST if user is part of the company.
+        allow read, list: if isAuth() && userHasProfile(companyId, request.auth.uid);
+        
+        // Allow UPDATE if user is updating their own profile, or is an admin with permission.
+        allow update: if isAuth() && (request.auth.uid == userId || 'manage_users' in getPermissions(companyId));
+        
+        // Allow DELETE if user is an admin with permission.
+        allow delete: if isAuth() && 'manage_users' in getPermissions(companyId);
+      }
+
+      match /roles/{roleId} {
+        // Allow CREATE if:
+        // 1. It's part of a company creation (the company doc does not exist prior to this transaction).
+        // 2. An admin with 'manage_roles' permission is adding a role.
+        allow create: if isAuth() && (
+                        !exists(/databases/$(database)/documents/companies/$(companyId)) || 
+                        'manage_roles' in getPermissions(companyId)
+                      );
+                      
+        // Allow READ/LIST if user is part of the company.
+        allow read, list: if isAuth() && userHasProfile(companyId, request.auth.uid);
+        
+        // Allow UPDATE/DELETE if user is an admin with permission.
+        allow update, delete: if isAuth() && 'manage_roles' in getPermissions(companyId);
+      }
+
+      match /invites/{inviteId} {
+        // Allow read for anyone to validate an invite link.
+        allow read: true; 
+        allow create: if isAuth() && 'manage_users' in getPermissions(companyId);
+        // Allow update for any authenticated user (the one accepting the invite).
+        allow update: if isAuth(); 
+        allow delete: if isAuth() && 'manage_users' in getPermissions(companyId);
+      }
+      
+      // Audit logs are written by the backend/other functions, let's assume any user in company can trigger one.
+      match /audit_logs/{logId} {
+        allow create: if isAuth() && userHasProfile(companyId, request.auth.uid);
+        allow read, list: if isAuth() && isCompanyAdmin(companyId); // Only admins can see audit logs for now.
+      }
+    }
+
+    match /user_company_lookup/{userId} {
+      // Allow CREATE if a user is creating their own lookup document.
+      allow create: if isAuth() && request.auth.uid == userId;
+      // Allow READ only by the user themselves.
+      allow read: if isAuth() && request.auth.uid == userId;
+      // Nobody can update or delete lookups from the client.
+      allow update, delete: if false;
+    }
+    
     match /contacts/{contactId} {
-      // Allow anyone to submit the form.
-      allow create: if true;
-      // Admins can read enquiries via a backend function (getContacts). Client reads are disallowed.
-      allow read, update, delete: if request.auth != null && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId != null && isCompanyAdmin(get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId, request.auth.uid);
+      allow create: if true; // Anyone can submit the contact form.
+      allow read, list, update, delete: if isPlatformAdmin();
     }
   }
 }
-
     

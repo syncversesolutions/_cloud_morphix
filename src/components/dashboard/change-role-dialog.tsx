@@ -24,7 +24,7 @@ interface ChangeRoleDialogProps {
 
 export default function ChangeRoleDialog({ isOpen, onOpenChange, user, roles, onConfirm }: ChangeRoleDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedRole, setSelectedRole] = useState(user.role);
+  const [selectedRole, setSelectedRole] = useState(user.company.role);
 
   const handleConfirm = async () => {
     setIsLoading(true);
@@ -39,7 +39,7 @@ export default function ChangeRoleDialog({ isOpen, onOpenChange, user, roles, on
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Change Role for {user.full_name}</DialogTitle>
+          <DialogTitle>Change Role for {user.profile.name}</DialogTitle>
           <DialogDescription>
             Select a new role for this user. This will change their permissions within the application.
           </DialogDescription>
@@ -65,7 +65,7 @@ export default function ChangeRoleDialog({ isOpen, onOpenChange, user, roles, on
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleConfirm} disabled={isLoading || selectedRole === user.role}>
+          <Button onClick={handleConfirm} disabled={isLoading || selectedRole === user.company.role}>
             {isLoading ? (
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-solid border-background border-t-transparent"></div>
             ) : 'Save Changes'}

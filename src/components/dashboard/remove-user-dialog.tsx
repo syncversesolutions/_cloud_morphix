@@ -41,7 +41,7 @@ export default function RemoveUserDialog({ isOpen, onOpenChange, user, onConfirm
           <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
           <AlertDialogDescription>
             This action cannot be undone. This will permanently remove{' '}
-            <span className="font-semibold text-foreground">{user.full_name}</span>{' '}
+            <span className="font-semibold text-foreground">{user.profile.name}</span>{' '}
             from the company and revoke their access to all dashboards and data.
           </AlertDialogDescription>
         </AlertDialogHeader>

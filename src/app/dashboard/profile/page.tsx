@@ -18,7 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import LoadingSpinner from "@/components/loading-spinner";
 
 const profileSchema = z.object({
-  fullName: z.string().min(2, { message: "Full name must be at least 2 characters." }),
+  name: z.string().min(2, { message: "Full name must be at least 2 characters." }),
   email: z.string().email(),
   phone: z.string().optional(),
 });
@@ -49,10 +49,10 @@ export default function ProfilePage() {
 
   const profileForm = useForm<z.infer<typeof profileSchema>>({
     resolver: zodResolver(profileSchema),
-    values: { // Use values to dynamically update the form when userProfile changes
-      fullName: userProfile?.full_name || "",
-      email: userProfile?.email || "",
-      phone: userProfile?.phone_number || "",
+    values: {
+      name: userProfile?.profile.name || "",
+      email: userProfile?.profile.email || "",
+      phone: userProfile?.profile.phone_number || "",
     },
   });
 
@@ -70,10 +70,10 @@ export default function ProfilePage() {
     setIsProfileLoading(true);
     try {
       await updateUserProfile(user.uid, {
-        full_name: values.fullName,
+        name: values.name,
         phone_number: values.phone,
       });
-      await refreshUserProfile(); // Manually refresh the user profile in the context
+      await refreshUserProfile();
       toast({
         title: "Success",
         description: "Your profile has been updated.",
@@ -135,7 +135,7 @@ export default function ProfilePage() {
             <form onSubmit={profileForm.handleSubmit(onProfileSubmit)} className="space-y-4 max-w-lg">
               <FormField
                 control={profileForm.control}
-                name="fullName"
+                name="name"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Full Name</FormLabel>

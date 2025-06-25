@@ -17,8 +17,19 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import ChangeRoleDialog from "@/components/dashboard/change-role-dialog";
 import RemoveUserDialog from "@/components/dashboard/remove-user-dialog";
 
+type TeamMember = {
+    id: string;
+    type: 'user' | 'invite';
+    fullName: string;
+    email: string;
+    role: string;
+    status: 'accepted' | 'pending';
+    originalProfile: UserProfile | null;
+    inviteId?: string;
+};
+
 export default function UserManagementPage() {
-  const { userProfile, loading: authLoading } = useAuth();
+  const { user, userProfile, loading: authLoading } = useAuth();
   const { toast } = useToast();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
@@ -28,12 +39,11 @@ export default function UserManagementPage() {
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
   const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
 
-  // State for new dialogs
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [isChangeRoleDialogOpen, setIsChangeRoleDialogOpen] = useState(false);
   const [isRemoveUserDialogOpen, setIsRemoveUserDialogOpen] = useState(false);
 
-  const companyId = userProfile?.company_id;
+  const companyId = userProfile?.company.id;
 
   const fetchUsersAndRoles = useCallback(async () => {
     if (!companyId) return;
@@ -42,13 +52,14 @@ export default function UserManagementPage() {
       const [fetchedUsers, fetchedRoles, fetchedInvites] = await Promise.all([
         getCompanyUsers(companyId),
         getCompanyRoles(companyId),
-        getCompanyInvites(companyId, true), // Fetch all invites to show status
+        getCompanyInvites(companyId, true),
       ]);
 
       let currentRoles = fetchedRoles;
-      if (currentRoles.length === 0) {
+      if (currentRoles.length === 0 && userProfile && user) {
+        const actor = { id: user.uid, name: userProfile.profile.name, email: userProfile.profile.email };
         await createInitialAdminRole(companyId);
-        currentRoles = await getCompanyRoles(companyId); 
+        currentRoles = await getCompanyRoles(companyId);
       }
       
       const uniqueRoles = [...new Set(currentRoles)];
@@ -67,7 +78,7 @@ export default function UserManagementPage() {
     } finally {
       setLoading(false);
     }
-  }, [companyId, toast]);
+  }, [companyId, toast, user, userProfile]);
 
   useEffect(() => {
     if (companyId) {
@@ -75,8 +86,14 @@ export default function UserManagementPage() {
     }
   }, [companyId, fetchUsersAndRoles]);
 
+  const getActor = () => {
+      if (!user || !userProfile) return null;
+      return { id: user.uid, name: userProfile.profile.name, email: userProfile.profile.email };
+  }
+
   const handleAddRole = async (roleName: string) => {
-    if (!companyId) return false;
+    const actor = getActor();
+    if (!companyId || !actor) return false;
     if (roles.map(r => r.toLowerCase()).includes(roleName.toLowerCase())) {
         toast({
             variant: "destructive",
@@ -86,9 +103,9 @@ export default function UserManagementPage() {
         return false;
     }
     try {
-      await addRole(companyId, roleName);
+      await addRole(companyId, roleName, actor);
       toast({ title: "Success", description: `Role "${roleName}" added.` });
-      fetchUsersAndRoles(); // Refresh roles list
+      fetchUsersAndRoles();
       return true;
     } catch (error) {
       toast({ variant: "destructive", title: "Error", description: "Failed to add role." });
@@ -97,11 +114,12 @@ export default function UserManagementPage() {
   };
 
   const handleInviteUser = async (fullName: string, email: string, role: string) => {
-    if (!companyId) return false;
+    const actor = getActor();
+    if (!companyId || !actor) return false;
     try {
-      await createInvite(companyId, email, fullName, role);
+      await createInvite(companyId, email, fullName, role, actor);
       toast({ title: "Success", description: `Invitation sent to ${email}.` });
-      fetchUsersAndRoles(); // Refetch to show the new invite in the list
+      fetchUsersAndRoles();
       return true;
     } catch (error) {
       toast({ variant: "destructive", title: "Error", description: "Failed to send invitation." });
@@ -119,11 +137,12 @@ export default function UserManagementPage() {
   };
   
   const handleChangeRole = async (newRole: string) => {
-    if (!selectedUser) return false;
+    const actor = getActor();
+    if (!selectedUser || !actor || !companyId) return false;
     try {
-      await updateUserRole(selectedUser.user_id, newRole);
-      toast({ title: "Success", description: `${selectedUser.full_name}'s role has been updated to ${newRole}.`});
-      fetchUsersAndRoles(); // Refresh user list
+      await updateUserRole(selectedUser.id, newRole, actor, companyId);
+      toast({ title: "Success", description: `${selectedUser.profile.name}'s role has been updated to ${newRole}.`});
+      fetchUsersAndRoles();
       return true;
     } catch (error) {
        toast({ variant: "destructive", title: "Update Failed", description: "Could not update the user's role."});
@@ -132,11 +151,12 @@ export default function UserManagementPage() {
   }
 
   const handleRemoveUser = async () => {
-    if (!selectedUser) return false;
+    const actor = getActor();
+    if (!selectedUser || !actor) return false;
     try {
-        await removeUserFromCompany(selectedUser.user_id);
-        toast({ title: "Success", description: `${selectedUser.full_name} has been removed from the company.`});
-        fetchUsersAndRoles(); // Refresh user list
+        await removeUserFromCompany(selectedUser, actor);
+        toast({ title: "Success", description: `${selectedUser.profile.name} has been removed from the company.`});
+        fetchUsersAndRoles();
         return true;
     } catch (error) {
         toast({ variant: "destructive", title: "Removal Failed", description: "Could not remove the user."});
@@ -148,7 +168,7 @@ export default function UserManagementPage() {
     return <LoadingSpinner />;
   }
 
-  if (userProfile?.role !== "Admin") {
+  if (userProfile?.company.role !== "Admin") {
     return (
       <div className="container mx-auto p-4 sm:p-6 lg:p-8">
         <h1 className="text-2xl font-bold">Access Denied</h1>
@@ -157,12 +177,29 @@ export default function UserManagementPage() {
     );
   }
   
-  const allTeamMembers = [
-    ...users.map(u => ({...u, type: 'user' as const, id: u.user_id, status: 'accepted' as const })),
+  const allTeamMembers: TeamMember[] = [
+    ...users.map(u => ({
+      id: u.id,
+      type: 'user' as const,
+      fullName: u.profile.name,
+      email: u.profile.email,
+      role: u.company.role,
+      status: 'accepted' as const,
+      originalProfile: u,
+    })),
     ...invites
-        .filter(i => i.status === 'pending') // Only show pending invites
-        .map(i => ({...i, type: 'invite' as const, id: i.invite_id, role: i.role, status: 'pending' as const}))
-  ].sort((a, b) => a.full_name.localeCompare(b.full_name));
+        .filter(i => i.status === 'pending')
+        .map(i => ({
+          id: i.invite_id,
+          type: 'invite' as const,
+          fullName: i.full_name,
+          email: i.email,
+          role: i.role,
+          status: 'pending' as const,
+          originalProfile: null,
+          inviteId: i.invite_id
+        }))
+  ].sort((a, b) => a.fullName.localeCompare(b.fullName));
 
   return (
     <div className="container mx-auto p-4 sm:p-6 lg:p-8">
@@ -202,7 +239,7 @@ export default function UserManagementPage() {
               {allTeamMembers.length > 0 ? (
                 allTeamMembers.map((member) => (
                   <TableRow key={member.id}>
-                    <TableCell className="font-medium">{member.full_name}</TableCell>
+                    <TableCell className="font-medium">{member.fullName}</TableCell>
                     <TableCell>{member.email}</TableCell>
                     <TableCell>
                       {member.type === 'user' ? (
@@ -212,13 +249,13 @@ export default function UserManagementPage() {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                        {member.type === 'invite' && (
-                            <Button variant="ghost" size="sm" onClick={() => handleCopyInviteLink(member.id)}>
-                                {copiedInviteId === member.id ? <Check className="mr-2 text-green-500" /> : <Copy className="mr-2" />}
+                        {member.type === 'invite' && member.inviteId && (
+                            <Button variant="ghost" size="sm" onClick={() => handleCopyInviteLink(member.inviteId!)}>
+                                {copiedInviteId === member.inviteId ? <Check className="mr-2 text-green-500" /> : <Copy className="mr-2" />}
                                 Copy Link
                             </Button>
                         )}
-                        {member.type === 'user' && userProfile.user_id !== member.user_id && (
+                        {member.type === 'user' && userProfile.id !== member.id && (
                            <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" className="h-8 w-8 p-0">
@@ -229,8 +266,10 @@ export default function UserManagementPage() {
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem
                                 onClick={() => {
-                                  setSelectedUser(member);
-                                  setIsChangeRoleDialogOpen(true);
+                                  if (member.originalProfile) {
+                                      setSelectedUser(member.originalProfile);
+                                      setIsChangeRoleDialogOpen(true);
+                                  }
                                 }}
                               >
                                 Change Role
@@ -239,8 +278,10 @@ export default function UserManagementPage() {
                               <DropdownMenuItem
                                 className="text-destructive"
                                 onClick={() => {
-                                  setSelectedUser(member);
-                                  setIsRemoveUserDialogOpen(true);
+                                  if (member.originalProfile) {
+                                    setSelectedUser(member.originalProfile);
+                                    setIsRemoveUserDialogOpen(true);
+                                  }
                                 }}
                               >
                                 Remove User

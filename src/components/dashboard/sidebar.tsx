@@ -16,7 +16,7 @@ const navLinks = [
 export default function Sidebar() {
   const pathname = usePathname();
   const { userProfile } = useAuth();
-  const isAdmin = userProfile?.role === "Admin";
+  const isAdmin = userProfile?.company.role === "Admin";
 
   return (
     <aside className="w-64 flex-shrink-0 border-r border-border/60 bg-background p-4">

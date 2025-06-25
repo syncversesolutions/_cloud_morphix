@@ -54,7 +54,11 @@ export default function UserManagementPage() {
           fetchedUsers = await getCompanyUsers(companyId);
       } catch (error) {
           console.error("Failed to fetch company users:", error);
-          throw new Error("Could not fetch company users. Please check security rules.");
+          toast({
+            variant: "destructive",
+            title: "Error Fetching Users",
+            description: "Could not fetch company users. Please check your security rules.",
+          });
       }
 
       let fetchedRoles: string[] = [];
@@ -62,7 +66,11 @@ export default function UserManagementPage() {
           fetchedRoles = await getCompanyRoles(companyId);
       } catch (error) {
           console.error("Failed to fetch company roles:", error);
-          throw new Error("Could not fetch company roles. Please check security rules.");
+          toast({
+            variant: "destructive",
+            title: "Error Fetching Roles",
+            description: "Could not fetch company roles. Please check your security rules.",
+          });
       }
 
       let fetchedInvites: Invite[] = [];
@@ -70,7 +78,11 @@ export default function UserManagementPage() {
           fetchedInvites = await getCompanyInvites(companyId);
       } catch (error) {
           console.error("Failed to fetch company invites:", error);
-          throw new Error("Could not fetch company invites. Please check security rules.");
+          toast({
+            variant: "destructive",
+            title: "Error Fetching Invites",
+            description: "Could not fetch company invites. Please check your security rules.",
+          });
       }
 
       let currentRoles = fetchedRoles;
@@ -91,7 +103,7 @@ export default function UserManagementPage() {
       toast({
         variant: "destructive",
         title: "Error",
-        description: error.message || "Failed to fetch users and roles.",
+        description: "An unexpected error occurred while loading user data.",
       });
     } finally {
       setLoading(false);

@@ -18,7 +18,7 @@ export default function EnquiriesPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!authLoading && userProfile?.company.role !== "Admin") {
+    if (!authLoading && userProfile?.role !== "Admin") {
       setLoading(false);
       return;
     }
@@ -38,7 +38,7 @@ export default function EnquiriesPage() {
     return <LoadingSpinner />;
   }
 
-  if (userProfile?.company.role !== "Admin") {
+  if (userProfile?.role !== "Admin") {
     return (
       <div className="container mx-auto p-4 sm:p-6 lg:p-8">
         <Alert variant="destructive">
@@ -109,3 +109,5 @@ export default function EnquiriesPage() {
     </div>
   );
 }
+
+    

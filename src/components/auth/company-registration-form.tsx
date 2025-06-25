@@ -36,7 +36,6 @@ const formSchema = z.object({
   companyName: z.string().min(2, { message: "Company name must be at least 2 characters." }),
   adminFullName: z.string().min(2, { message: "Your name must be at least 2 characters." }),
   industry: z.string().min(1, { message: "Please select an industry." }),
-  companySize: z.string().min(1, { message: "Please select a company size." }),
   email: z.string().email({ message: "Please enter a valid email." }),
   password: z.string().refine(password => {
     const hasUppercase = /[A-Z]/.test(password);
@@ -48,7 +47,6 @@ const formSchema = z.object({
   }, {
     message: "Please ensure your password meets all the security requirements."
   }),
-  phone: z.string().min(10, { message: "Please enter a valid phone number." }),
 });
 
 export default function CompanyRegistrationForm() {
@@ -72,10 +70,8 @@ export default function CompanyRegistrationForm() {
       companyName: "",
       adminFullName: "",
       industry: "",
-      companySize: "",
       email: "",
       password: "",
-      phone: "",
     },
   });
 
@@ -89,9 +85,6 @@ export default function CompanyRegistrationForm() {
         companyData: {
           company_name: values.companyName,
           industry: values.industry,
-          company_size: values.companySize,
-          registered_email: values.email,
-          phone_number: values.phone,
         },
         adminData: {
           uid: user.uid,
@@ -175,43 +168,6 @@ export default function CompanyRegistrationForm() {
                 </FormItem>
               )}
             />
-            <FormField
-              control={form.control}
-              name="companySize"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Company Size</FormLabel>
-                   <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select company size" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="1-10">1-10 employees</SelectItem>
-                      <SelectItem value="11-50">11-50 employees</SelectItem>
-                      <SelectItem value="51-200">51-200 employees</SelectItem>
-                      <SelectItem value="201-1000">201-1000 employees</SelectItem>
-                      <SelectItem value="1000+">1000+ employees</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="phone"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Contact Phone</FormLabel>
-                  <FormControl>
-                    <Input placeholder="(123) 456-7890" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
              <FormField
               control={form.control}
               name="email"
@@ -267,12 +223,6 @@ export default function CompanyRegistrationForm() {
             </Button>
             <div className="text-sm md:col-span-2 text-center mt-4 space-y-2">
                 <p className="text-muted-foreground">
-                  Joining an existing company?{" "}
-                  <Link href="/register/join" className="font-medium text-primary hover:underline">
-                    Join with a Company ID
-                  </Link>
-                </p>
-                <p className="text-muted-foreground">
                   Already have an account?{" "}
                   <Link href="/login" className="font-medium text-primary hover:underline">
                     Login here
@@ -285,3 +235,5 @@ export default function CompanyRegistrationForm() {
     </Card>
   );
 }
+
+    

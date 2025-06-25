@@ -38,20 +38,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } else {
       setUserProfile(null);
     }
+    // Set loading to false only after all async operations are done.
+    setLoading(false);
   }, []);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      // Reset state and start loading when auth state changes
+      setLoading(true);
       setUser(user);
-      await fetchProfile(user);
-      setLoading(false);
+      fetchProfile(user);
     });
 
     return () => unsubscribe();
   }, [fetchProfile]);
   
   const refreshUserProfile = async () => {
+    setLoading(true);
     await fetchProfile(user);
+    setLoading(false);
   };
 
   const value = { user, userProfile, loading, refreshUserProfile };
@@ -62,3 +67,5 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     </AuthContext.Provider>
   );
 }
+
+    

@@ -33,7 +33,7 @@ export default function Header() {
         <div className="mr-4 flex items-center">
           <Cloud className="h-6 w-6 text-primary" />
           <span className="ml-2 text-lg font-bold font-headline">
-            {userProfile?.company.name || "Cloud Morphix"}
+            {userProfile?.companyName || "Cloud Morphix"}
           </span>
         </div>
         <div className="flex flex-1 items-center justify-end space-x-2">
@@ -46,3 +46,5 @@ export default function Header() {
     </header>
   );
 }
+
+    

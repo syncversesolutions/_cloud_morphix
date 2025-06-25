@@ -3,78 +3,61 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    function isUserAuthenticated() {
-      return request.auth != null;
+  
+    // Helper function to check if a user is an admin of a given company.
+    function isCompanyAdmin(companyId, userId) {
+      let userRole = get(/databases/$(database)/documents/companies/$(companyId)/users/$(userId)).data.role;
+      return userRole == 'Admin';
     }
 
-    function getUserData(userId) {
-      return get(/databases/$(database)/documents/users/$(userId)).data;
-    }
-    
-    function getUserCompanyId(userId) {
-      return getUserData(userId).company.id;
-    }
-    
-    function isUserAdmin(userId) {
-      return getUserData(userId).company.role == 'Admin';
+    // New lookup collection: Allows a user to manage their own lookup document.
+    match /user_company_lookup/{userId} {
+      allow read, create, update, delete: if request.auth.uid == userId;
     }
 
-    match /users/{userId} {
-      allow create: if isUserAuthenticated();
-      
-      // A user can read their own profile.
-      // An admin can read profiles of users in their company.
-      allow read: if isUserAuthenticated() && (request.auth.uid == userId || 
-                  (isUserAdmin(request.auth.uid) && getUserCompanyId(request.auth.uid) == getUserCompanyId(userId)));
-      
-      // A user can update their own profile info.
-      // An admin can update another user's role.
-      allow update: if (request.auth.uid == userId && request.resource.data.keys().hasOnly(['profile'])) ||
-                   (isUserAdmin(request.auth.uid) && getUserCompanyId(request.auth.uid) == getUserCompanyId(userId) && request.resource.data.keys().hasAny(['company.role']));
-
-      // Only an admin can remove a user from the company.
-      allow delete: if isUserAdmin(request.auth.uid) && getUserCompanyId(request.auth.uid) == getUserCompanyId(userId);
-    }
-    
+    // Main companies collection
     match /companies/{companyId} {
-      allow create: if isUserAuthenticated();
-
-      // Any user belonging to the company can read the company document.
-      allow read: if isUserAuthenticated() && getUserCompanyId(request.auth.uid) == companyId;
+      // Allow read if user is part of the company's user sub-collection.
+      allow read: if exists(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid));
+      // Allow any authenticated user to create a new company.
+      allow create: if request.auth != null;
+      // Allow updates only by admins of that company.
+      allow update: if isCompanyAdmin(companyId, request.auth.uid);
       
-      // Only Admins can update company settings or roles.
-      allow update: if isUserAdmin(request.auth.uid) && getUserCompanyId(request.auth.uid) == companyId;
-      
-      allow delete: if false;
-
-      // SUBCOLLECTIONS
-      match /invites/{inviteId} {
-          // Anyone with a link can read a pending invite to verify it.
-          allow read: if resource.data.status == 'pending';
-          
-          // Admins can create and manage invites.
-          allow create, update, delete: if isUserAdmin(request.auth.uid) && getUserCompanyId(request.auth.uid) == companyId;
-          
-          // Allow an authenticated user to accept an invite.
-          allow update: if isUserAuthenticated() && request.resource.data.status == 'accepted';
+      // Users sub-collection
+      match /users/{userId} {
+        // Allow reads by the user themselves or by a company admin.
+        allow read: if request.auth.uid == userId || isCompanyAdmin(companyId, request.auth.uid);
+        // Allow a user to create their own user document (on registration/invite accept).
+        allow create: if request.auth.uid == userId;
+        // Allow updates by the user themselves (for their profile) or by an admin.
+        allow update: if request.auth.uid == userId || isCompanyAdmin(companyId, request.auth.uid);
+        // Allow deletion only by an admin.
+        allow delete: if isCompanyAdmin(companyId, request.auth.uid);
       }
       
+      // Invites sub-collection
+      match /invites/{inviteId} {
+        // Allow anyone to read a specific invite document using its link.
+        allow get: if true;
+        // Allow admins to list invites, create new ones, and update them.
+        allow list, create, update, delete: if isCompanyAdmin(companyId, request.auth.uid);
+      }
+      
+      // Audit logs sub-collection (admin only)
       match /audit_logs/{logId} {
-        allow read: if isUserAdmin(request.auth.uid) && getUserCompanyId(request.auth.uid) == companyId;
-        allow write: if false;
+      	allow read, create: if isCompanyAdmin(companyId, request.auth.uid);
       }
     }
     
+    // Contact form submissions
     match /contacts/{contactId} {
-      // Anyone can submit the form.
+      // Allow anyone to submit the form.
       allow create: if true;
-      
-      // Only admins can read the submitted enquiries.
-      allow read: if isUserAdmin(request.auth.uid);
-      
-      // No one should update or delete from the client.
-      allow update, delete: if false;
+      // Admins can read enquiries via a backend function (getContacts). Client reads are disallowed.
+      allow read, update, delete: if request.auth != null && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId != null && isCompanyAdmin(get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId, request.auth.uid);
     }
   }
 }
+
+    

@@ -9,4 +9,8 @@ export const useAuth = () => {
   return useContext(AuthContext);
 };
 
+// This type now represents the fully composed user profile object
+// assembled in firestore.ts for use in the UI.
 export type UserProfile = UserProfileType;
+
+    

@@ -20,7 +20,6 @@ import LoadingSpinner from "@/components/loading-spinner";
 const profileSchema = z.object({
   name: z.string().min(2, { message: "Full name must be at least 2 characters." }),
   email: z.string().email(),
-  phone: z.string().optional(),
 });
 
 const passwordSchema = z.object({
@@ -50,9 +49,8 @@ export default function ProfilePage() {
   const profileForm = useForm<z.infer<typeof profileSchema>>({
     resolver: zodResolver(profileSchema),
     values: {
-      name: userProfile?.profile.name || "",
-      email: userProfile?.profile.email || "",
-      phone: userProfile?.profile.phone_number || "",
+      name: userProfile?.fullName || "",
+      email: userProfile?.email || "",
     },
   });
 
@@ -66,12 +64,11 @@ export default function ProfilePage() {
   });
 
   async function onProfileSubmit(values: z.infer<typeof profileSchema>) {
-    if (!user) return;
+    if (!user || !userProfile) return;
     setIsProfileLoading(true);
     try {
-      await updateUserProfile(user.uid, {
+      await updateUserProfile(user.uid, userProfile.companyId, {
         name: values.name,
-        phone_number: values.phone,
       });
       await refreshUserProfile();
       toast({
@@ -159,19 +156,6 @@ export default function ProfilePage() {
                   </FormItem>
                 )}
               />
-              <FormField
-                control={profileForm.control}
-                name="phone"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Phone Number (Optional)</FormLabel>
-                    <FormControl>
-                      <Input placeholder="(123) 456-7890" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
               <Button type="submit" disabled={isProfileLoading}>
                 {isProfileLoading ? "Saving..." : "Save Changes"}
               </Button>
@@ -238,3 +222,5 @@ export default function ProfilePage() {
     </div>
   );
 }
+
+    

@@ -45,7 +45,7 @@ export default function UserManagementPage() {
   const [isChangeRoleDialogOpen, setIsChangeRoleDialogOpen] = useState(false);
   const [isRemoveUserDialogOpen, setIsRemoveUserDialogOpen] = useState(false);
 
-  const companyId = userProfile?.company.id;
+  const companyId = userProfile?.companyId;
 
   const fetchUsersAndRoles = useCallback(async () => {
     if (!companyId) return;
@@ -60,7 +60,7 @@ export default function UserManagementPage() {
       
       let currentRoles = fetchedRoles;
       if (currentRoles.length === 0 && userProfile && user) {
-        const actor = { id: user.uid, name: userProfile.profile.name, email: userProfile.profile.email };
+        const actor = { id: user.uid, name: userProfile.fullName, email: userProfile.email };
         await createInitialAdminRole(companyId, actor);
         currentRoles = await getCompanyRoles(companyId);
       }
@@ -94,7 +94,7 @@ export default function UserManagementPage() {
 
   const getActor = () => {
       if (!user || !userProfile) return null;
-      return { id: user.uid, name: userProfile.profile.name, email: userProfile.profile.email };
+      return { id: user.uid, name: userProfile.fullName, email: userProfile.email };
   }
 
   const handleAddRole = async (roleName: string) => {
@@ -147,7 +147,7 @@ export default function UserManagementPage() {
     if (!selectedUser || !actor || !companyId) return false;
     try {
       await updateUserRole(selectedUser.id, newRole, actor, companyId);
-      toast({ title: "Success", description: `${selectedUser.profile.name}'s role has been updated to ${newRole}.`});
+      toast({ title: "Success", description: `${selectedUser.fullName}'s role has been updated to ${newRole}.`});
       fetchUsersAndRoles();
       return true;
     } catch (error) {
@@ -161,7 +161,7 @@ export default function UserManagementPage() {
     if (!selectedUser || !actor) return false;
     try {
         await removeUserFromCompany(selectedUser, actor);
-        toast({ title: "Success", description: `${selectedUser.profile.name} has been removed from the company.`});
+        toast({ title: "Success", description: `${selectedUser.fullName} has been removed from the company.`});
         fetchUsersAndRoles();
         return true;
     } catch (error) {
@@ -174,7 +174,7 @@ export default function UserManagementPage() {
     return <LoadingSpinner />;
   }
 
-  if (userProfile?.company.role !== "Admin") {
+  if (userProfile?.role !== "Admin") {
     return (
       <div className="container mx-auto p-4 sm:p-6 lg:p-8">
         <Alert variant="destructive">
@@ -192,9 +192,9 @@ export default function UserManagementPage() {
     ...users.map(u => ({
       id: u.id,
       type: 'user' as const,
-      fullName: u.profile.name,
-      email: u.profile.email,
-      role: u.company.role,
+      fullName: u.fullName,
+      email: u.email,
+      role: u.role,
       status: 'accepted' as const,
       originalProfile: u,
     })),
@@ -362,3 +362,5 @@ export default function UserManagementPage() {
     </div>
   );
 }
+
+    

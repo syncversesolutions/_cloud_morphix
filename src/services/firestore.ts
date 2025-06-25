@@ -2,27 +2,29 @@
 import { doc, getDoc, setDoc, serverTimestamp, collection, writeBatch, query, where, getDocs, addDoc, updateDoc, deleteDoc, arrayUnion, orderBy, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
-// NEW STRUCTURE: Actor interface for audit logs
-interface Actor {
-    id: string;
-    name: string;
-    email: string;
-}
-
-// NEW STRUCTURE: UserProfile uses nested maps
+// NEW STRUCTURE: The user's profile data, stored in a sub-collection of a company.
 export interface UserProfile {
     id: string; // user UID
+    fullName: string;
+    email: string;
+    role: "Admin" | "Analyst" | "Viewer" | string;
+    dashboardUrl?: string;
+    isActive: boolean;
     createdAt: any;
-    profile: {
-        name: string;
-        email: string;
-        phone_number?: string;
-    };
-    company: {
-        id: string;
-        name: string;
-        role: "Admin" | "Analyst" | "Viewer" | string;
-    };
+    companyId: string; // Denormalized for convenience
+    companyName: string; // Denormalized for convenience
+}
+
+// NEW STRUCTURE: The company data.
+export interface Company {
+    id: string;
+    company_name: string;
+    industry: string;
+    subscription_plan: 'Trial' | 'Basic' | 'Enterprise';
+    is_active: boolean;
+    created_at: any;
+    plan_expiry_date?: any;
+    roles: string[];
 }
 
 export interface Invite {
@@ -46,7 +48,12 @@ export interface Contact {
   submittedAt: Timestamp;
 }
 
-// NEW FUNCTION: For creating audit logs
+interface Actor {
+    id: string;
+    name: string;
+    email: string;
+}
+
 async function createAuditLog(companyId: string, actor: Actor, message: string) {
     try {
         const auditLogRef = collection(db, "companies", companyId, "audit_logs");
@@ -60,55 +67,62 @@ async function createAuditLog(companyId: string, actor: Actor, message: string) 
     }
 }
 
+// Re-fetches the user profile based on the new structure.
+// This is a composite object built from multiple documents for UI convenience.
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
-    const userRef = doc(db, "users", uid);
-    const userSnap = await getDoc(userRef);
+    const lookupRef = doc(db, "user_company_lookup", uid);
+    const lookupSnap = await getDoc(lookupRef);
 
-    if (userSnap.exists()) {
-        const data = userSnap.data();
-        // Adapt to new structure, ensuring id is the doc id.
-        return { id: userSnap.id, ...data } as UserProfile;
+    if (!lookupSnap.exists()) {
+        console.log("No company lookup found for user:", uid);
+        return null;
     }
-    return null;
+
+    const { companyId } = lookupSnap.data();
+    if (!companyId) return null;
+
+    const companyRef = doc(db, "companies", companyId);
+    const userRef = doc(db, "companies", companyId, "users", uid);
+
+    const [companySnap, userSnap] = await Promise.all([
+        getDoc(companyRef),
+        getDoc(userRef)
+    ]);
+
+    if (!companySnap.exists() || !userSnap.exists()) {
+        console.log("Company or user document not found.");
+        return null;
+    }
+
+    const companyData = companySnap.data() as Omit<Company, 'id' | 'roles'>;
+    const userData = userSnap.data();
+
+    // The object returned to the app combines all necessary info
+    return {
+        id: uid,
+        fullName: userData.fullName,
+        email: userData.email,
+        role: userData.role,
+        dashboardUrl: userData.dashboardUrl,
+        isActive: userData.isActive,
+        createdAt: userData.createdAt,
+        companyId: companyId,
+        companyName: companyData.company_name,
+    };
 }
 
+
+// Dashboard URL is now directly on the user profile.
 export async function getDashboardUrl(uid: string): Promise<string | null> {
     const userProfile = await getUserProfile(uid);
-
-    if (!userProfile?.company.id) return null;
-    
-    // Non-admin users might not have permission to read the company doc, which is fine.
-    // We'll wrap in a try/catch to handle permission errors gracefully.
-    try {
-        const companyRef = doc(db, "companies", userProfile.company.id);
-        const companySnap = await getDoc(companyRef);
-        
-        if (companySnap.exists()) {
-            const companyData = companySnap.data();
-            return companyData.settings?.lookerUrl || null;
-        }
-    } catch (error: any) {
-        // This is expected for non-admins if rules are strict.
-        if (error.code === 'permission-denied') {
-          setPermissionError(true);
-        } else {
-             console.error("An unexpected error occurred while fetching dashboard URL:", error);
-        }
-    }
-    
-    return null;
+    return userProfile?.dashboardUrl || null;
 }
 
-// UPDATED: Interface for company creation data
 interface CompanyData {
     company_name: string;
     industry: string;
-    company_size: string;
-    registered_email: string;
-    phone_number: string;
 }
 
-// UPDATED: Interface for admin creation data
 interface AdminData {
     uid: string;
     email: string;
@@ -117,42 +131,34 @@ interface AdminData {
 
 export async function createCompanyAndAdmin({ companyData, adminData }: { companyData: CompanyData, adminData: AdminData }): Promise<void> {
     const companyRef = doc(collection(db, "companies"));
-    const userRef = doc(db, "users", adminData.uid);
+    const userRef = doc(db, "companies", companyRef.id, "users", adminData.uid);
+    const lookupRef = doc(db, "user_company_lookup", adminData.uid);
 
     const batch = writeBatch(db);
 
-    // UPDATED: Write company document with new nested structure
+    // 1. Create the Company Document
     batch.set(companyRef, {
-        createdAt: serverTimestamp(),
-        companyInfo: {
-            name: companyData.company_name,
-            industry: companyData.industry,
-            size: companyData.company_size,
-            email: companyData.registered_email,
-            phone: companyData.phone_number,
-        },
-        subscription: {
-            plan: "Trial",
-            status: "Active",
-        },
-        settings: {
-            lookerUrl: null,
-        },
-        roles: ["Admin", "Viewer", "Analyst"],
+        company_name: companyData.company_name,
+        industry: companyData.industry,
+        subscription_plan: "Trial",
+        is_active: true,
+        created_at: serverTimestamp(),
+        plan_expiry_date: null,
+        roles: ["Admin", "Viewer", "Analyst"], // Default roles
     });
 
+    // 2. Create the User Document in the sub-collection
     batch.set(userRef, {
+        fullName: adminData.fullName,
+        email: adminData.email,
+        role: "Admin",
+        dashboardUrl: null,
+        isActive: true,
         createdAt: serverTimestamp(),
-        profile: {
-            name: adminData.fullName,
-            email: adminData.email,
-        },
-        company: {
-            id: companyRef.id,
-            name: companyData.company_name,
-            role: "Admin",
-        },
     });
+
+    // 3. Create the lookup document
+    batch.set(lookupRef, { companyId: companyRef.id });
     
     await batch.commit();
 
@@ -163,51 +169,24 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
     );
 }
 
-export async function createUserUnderCompany({
-    uid,
-    email,
-    fullName,
-    companyId,
-    role,
-}: {
-    uid: string;
-    email: string;
-    fullName: string;
-    companyId: string;
-    role: "Admin" | "Analyst" | "Viewer" | string;
-}): Promise<void> {
-    const companyRef = doc(db, "companies", companyId);
-    const userRef = doc(db, "users", uid);
-
-    const companySnap = await getDoc(companyRef);
-    if (!companySnap.exists()) {
-        throw new Error("The provided Company ID does not exist. Please check and try again.");
-    }
-    const companyData = companySnap.data();
-
-    await setDoc(userRef, {
-        createdAt: serverTimestamp(),
-        profile: {
-            name: fullName,
-            email: email,
-        },
-        company: {
-            id: companyId,
-            name: companyData.companyInfo.name, 
-            role: role,
-        },
-    });
-}
-
-
 export async function getCompanyUsers(companyId: string): Promise<UserProfile[]> {
-    const usersRef = collection(db, "users");
-    const q = query(usersRef, where("company.id", "==", companyId));
-    const querySnapshot = await getDocs(q);
+    const usersRef = collection(db, "companies", companyId, "users");
+    const companyRef = doc(db, "companies", companyId);
+
+    const [usersSnapshot, companySnap] = await Promise.all([getDocs(usersRef), getDoc(companyRef)]);
+    
+    if (!companySnap.exists()) return [];
+    const companyName = companySnap.data()?.company_name || 'Unknown Company';
     
     const users: UserProfile[] = [];
-    querySnapshot.forEach((doc) => {
-        users.push({ id: doc.id, ...doc.data() } as UserProfile);
+    usersSnapshot.forEach((doc) => {
+        const data = doc.data();
+        users.push({ 
+            id: doc.id,
+            companyId,
+            companyName,
+            ...data
+         } as UserProfile);
     });
     return users;
 }
@@ -271,7 +250,7 @@ export async function createInvite(companyId: string, email: string, fullName: s
         throw new Error("Cannot create invite for a non-existent company.");
     }
     const companyData = companySnap.data();
-    const companyName = companyData.companyInfo?.name || "Your Company";
+    const companyName = companyData.company_name || "Your Company";
 
     const invitesRef = collection(db, "companies", companyId, "invites");
     await addDoc(invitesRef, {
@@ -291,21 +270,9 @@ export async function getInviteDetails(companyId: string, inviteId: string): Pro
     const inviteSnap = await getDoc(inviteRef);
 
     if (inviteSnap.exists()) {
-        const inviteData = inviteSnap.data();
-        const companyName = inviteData.companyName;
-
-        // If companyName is missing in the invite, fetch it from the company doc as a fallback.
-        if (!companyName) {
-            const companyRef = doc(db, "companies", companyId);
-            const companySnap = await getDoc(companyRef);
-            if (companySnap.exists()) {
-                inviteData.companyName = companySnap.data().companyInfo?.name || "Your Company";
-            }
-        }
-        
         return { 
             invite_id: inviteSnap.id,
-            ...(inviteData as Omit<Invite, 'invite_id'>)
+            ...(inviteSnap.data() as Omit<Invite, 'invite_id'>)
         };
     }
     return null;
@@ -323,63 +290,68 @@ interface AcceptInviteData {
     companyName?: string;
 }
 
-export async function acceptInvite({ companyId, inviteId, user, role, companyName }: AcceptInviteData): Promise<void> {
-    const userRef = doc(db, "users", user.uid);
+export async function acceptInvite({ companyId, inviteId, user, role }: AcceptInviteData): Promise<void> {
+    const userRef = doc(db, "companies", companyId, "users", user.uid);
     const inviteRef = doc(db, "companies", companyId, "invites", inviteId);
+    const lookupRef = doc(db, "user_company_lookup", user.uid);
 
     const batch = writeBatch(db);
 
+    // 1. Create the User Document in the sub-collection
     batch.set(userRef, {
+        fullName: user.fullName,
+        email: user.email,
+        role: role,
+        dashboardUrl: null,
+        isActive: true,
         createdAt: serverTimestamp(),
-        profile: {
-            name: user.fullName,
-            email: user.email,
-        },
-        company: {
-            id: companyId,
-            name: companyName || "Unknown Company",
-            role: role,
-        },
     });
 
+    // 2. Update the invite status
     batch.update(inviteRef, {
         status: 'accepted',
         accepted_at: serverTimestamp(),
         accepted_by_uid: user.uid
     });
 
+    // 3. Create the lookup document
+    batch.set(lookupRef, { companyId: companyId });
+
     await batch.commit();
     await createAuditLog(companyId, {id: user.uid, name: user.fullName, email: user.email}, `Accepted invitation and joined the company.`);
 }
 
-export async function updateUserProfile(uid: string, data: { name: string; phone_number?: string; }): Promise<void> {
-    const userRef = doc(db, "users", uid);
+// Note: Phone number is no longer part of the new data structure.
+export async function updateUserProfile(uid: string, companyId: string, data: { name: string; }): Promise<void> {
+    const userRef = doc(db, "companies", companyId, "users", uid);
     const updateData: { [key: string]: any } = {
-        'profile.name': data.name,
+        'fullName': data.name,
     };
-
-    if (data.phone_number !== undefined) {
-        updateData['profile.phone_number'] = data.phone_number;
-    }
     
     await updateDoc(userRef, updateData);
 }
 
 export async function updateUserRole(uid: string, newRole: string, actor: Actor, companyId: string): Promise<void> {
-    const userRef = doc(db, "users", uid);
+    const userRef = doc(db, "companies", companyId, "users", uid);
     await updateDoc(userRef, {
-        'company.role': newRole
+        'role': newRole
     });
-    const targetUser = await getUserProfile(uid);
-    const targetName = targetUser?.profile.name || 'Unknown User';
+    
+    const targetUserDoc = await getDoc(userRef);
+    const targetName = targetUserDoc.data()?.fullName || 'Unknown User';
     await createAuditLog(companyId, actor, `Changed role for ${targetName} to "${newRole}".`);
 }
 
 export async function removeUserFromCompany(user: UserProfile, actor: Actor): Promise<void> {
-    const userRef = doc(db, "users", user.id);
-    await deleteDoc(userRef);
+    const userRef = doc(db, "companies", user.companyId, "users", user.id);
+    const lookupRef = doc(db, "user_company_lookup", user.id);
+    
+    const batch = writeBatch(db);
+    batch.delete(userRef);
+    batch.delete(lookupRef);
+    await batch.commit();
 
-    await createAuditLog(user.company.id, actor, `Removed user ${user.profile.name} (${user.profile.email}) from the company.`);
+    await createAuditLog(user.companyId, actor, `Removed user ${user.fullName} (${user.email}) from the company.`);
 }
 
 export async function getContacts(): Promise<Contact[]> {
@@ -394,3 +366,5 @@ export async function getContacts(): Promise<Contact[]> {
 
     return contacts;
 }
+
+    

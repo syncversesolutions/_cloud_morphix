@@ -52,7 +52,7 @@ export default function UserManagementPage() {
       const [fetchedUsers, fetchedRoles, fetchedInvites] = await Promise.all([
         getCompanyUsers(companyId),
         getCompanyRoles(companyId),
-        getCompanyInvites(companyId, true),
+        getCompanyInvites(companyId),
       ]);
 
       let currentRoles = fetchedRoles;

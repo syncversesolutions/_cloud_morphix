@@ -2,15 +2,27 @@
 import { doc, getDoc, setDoc, serverTimestamp, collection, writeBatch, query, where, getDocs, addDoc, updateDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
-export interface UserProfile {
-    user_id: string;
-    full_name: string;
+// NEW STRUCTURE: Actor interface for audit logs
+interface Actor {
+    id: string;
+    name: string;
     email: string;
-    company_id: string;
-    company_name?: string;
-    role: "Admin" | "Analyst" | "Viewer" | string; // Allow for custom roles
-    created_at: any;
-    phone_number?: string;
+}
+
+// NEW STRUCTURE: UserProfile uses nested maps
+export interface UserProfile {
+    id: string; // user UID
+    createdAt: any;
+    profile: {
+        name: string;
+        email: string;
+        phone_number?: string;
+    };
+    company: {
+        id: string;
+        name: string;
+        role: "Admin" | "Analyst" | "Viewer" | string;
+    };
 }
 
 export interface Invite {
@@ -25,12 +37,28 @@ export interface Invite {
     accepted_by_uid?: string;
 }
 
+// NEW FUNCTION: For creating audit logs
+async function createAuditLog(companyId: string, actor: Actor, message: string) {
+    try {
+        const auditLogRef = collection(db, "companies", companyId, "audit_logs");
+        await addDoc(auditLogRef, {
+            actor,
+            message,
+            timestamp: serverTimestamp(),
+        });
+    } catch (error) {
+        console.error("Failed to create audit log:", error);
+    }
+}
+
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
     const userRef = doc(db, "users", uid);
     const userSnap = await getDoc(userRef);
 
     if (userSnap.exists()) {
-        return userSnap.data() as UserProfile;
+        const data = userSnap.data();
+        // Adapt to new structure, ensuring id is the doc id.
+        return { id: userSnap.id, ...data } as UserProfile;
     }
     return null;
 }
@@ -38,15 +66,15 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
 export async function getDashboardUrl(uid: string): Promise<string | null> {
     const userProfile = await getUserProfile(uid);
 
-    if (userProfile && userProfile.company_id) {
+    // UPDATED: Use new nested structure
+    if (userProfile && userProfile.company.id) {
         try {
-            const companyRef = doc(db, "companies", userProfile.company_id);
+            const companyRef = doc(db, "companies", userProfile.company.id);
             const companySnap = await getDoc(companyRef);
             if (companySnap.exists()) {
                 const companyData = companySnap.data();
-                // This check is important for security. Only Admins can read the company doc.
-                // For non-admins, companySnap.exists() will be true, but companyData will be empty.
-                return companyData.lookerUrl || null;
+                // UPDATED: Access lookerUrl from nested settings map
+                return companyData.settings?.lookerUrl || null;
             }
         } catch (error: any) {
             if (error.code === 'permission-denied') {
@@ -60,6 +88,7 @@ export async function getDashboardUrl(uid: string): Promise<string | null> {
     return null;
 }
 
+// UPDATED: Interface for company creation data
 interface CompanyData {
     company_name: string;
     industry: string;
@@ -68,6 +97,7 @@ interface CompanyData {
     phone_number: string;
 }
 
+// UPDATED: Interface for admin creation data
 interface AdminData {
     uid: string;
     email: string;
@@ -80,29 +110,52 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
 
     const batch = writeBatch(db);
 
+    // UPDATED: Write company document with new nested structure
     batch.set(companyRef, {
-        ...companyData,
-        company_id: companyRef.id,
-        created_at: serverTimestamp(),
-        plan_type: "Trial",
-        subscription_status: "Active",
-        lookerUrl: null,
+        id: companyRef.id,
+        createdAt: serverTimestamp(),
+        companyInfo: {
+            name: companyData.company_name,
+            industry: companyData.industry,
+            size: companyData.company_size,
+            email: companyData.registered_email,
+            phone: companyData.phone_number,
+        },
+        subscription: {
+            plan: "Trial",
+            status: "Active",
+        },
+        settings: {
+            lookerUrl: null,
+        }
     });
 
+    // UPDATED: Write user document with new nested structure
     batch.set(userRef, {
-        user_id: adminData.uid,
-        full_name: adminData.fullName,
-        email: adminData.email,
-        company_id: companyRef.id,
-        company_name: companyData.company_name,
-        role: "Admin",
-        created_at: serverTimestamp(),
+        id: adminData.uid,
+        createdAt: serverTimestamp(),
+        profile: {
+            name: adminData.fullName,
+            email: adminData.email,
+        },
+        company: {
+            id: companyRef.id,
+            name: companyData.company_name,
+            role: "Admin",
+        },
     });
     
     await batch.commit();
+
+    // ADDED: Audit log for company creation
+    await createAuditLog(
+      companyRef.id,
+      { id: adminData.uid, name: adminData.fullName, email: adminData.email },
+      `Company account created.`
+    );
 }
 
-
+// UPDATED: This function is now fully implemented with the new structure
 export async function createUserUnderCompany({
     uid,
     email,
@@ -125,26 +178,33 @@ export async function createUserUnderCompany({
     }
     const companyData = companySnap.data();
 
+    // UPDATED: Create user with new nested structure
     await setDoc(userRef, {
-        user_id: uid,
-        full_name: fullName,
-        email: email,
-        company_id: companyId,
-        company_name: companyData.company_name,
-        role: role,
-        created_at: serverTimestamp(),
+        id: uid,
+        createdAt: serverTimestamp(),
+        profile: {
+            name: fullName,
+            email: email,
+        },
+        company: {
+            id: companyId,
+            name: companyData.companyInfo.name, // Get name from nested map
+            role: role,
+        },
     });
 }
 
 
 export async function getCompanyUsers(companyId: string): Promise<UserProfile[]> {
     const usersRef = collection(db, "users");
-    const q = query(usersRef, where("company_id", "==", companyId));
+    // UPDATED: Query based on the new nested field
+    const q = query(usersRef, where("company.id", "==", companyId));
     const querySnapshot = await getDocs(q);
     
     const users: UserProfile[] = [];
     querySnapshot.forEach((doc) => {
-        users.push(doc.data() as UserProfile);
+        // The id is now the doc id itself, which is more robust
+        users.push({ id: doc.id, ...doc.data() } as UserProfile);
     });
     return users;
 }
@@ -177,15 +237,16 @@ export async function getCompanyRoles(companyId: string): Promise<string[]> {
     return uniqueRoles.sort();
 }
 
-export async function addRole(companyId: string, roleName: string): Promise<void> {
+export async function addRole(companyId: string, roleName: string, actor: Actor): Promise<void> {
     const rolesRef = collection(db, "companies", companyId, "roles");
     await addDoc(rolesRef, {
         name: roleName,
         created_at: serverTimestamp(),
     });
+    await createAuditLog(companyId, actor, `Created new role: "${roleName}".`);
 }
 
-export async function createInvite(companyId: string, email: string, fullName: string, role: string): Promise<void> {
+export async function createInvite(companyId: string, email: string, fullName: string, role: string, actor: Actor): Promise<void> {
     const invitesRef = collection(db, "companies", companyId, "invites");
     await addDoc(invitesRef, {
         email,
@@ -194,6 +255,7 @@ export async function createInvite(companyId: string, email: string, fullName: s
         status: "pending",
         created_at: serverTimestamp(),
     });
+    await createAuditLog(companyId, actor, `Invited ${fullName} (${email}) with role: "${role}".`);
 }
 
 export async function createInitialAdminRole(companyId: string): Promise<void> {
@@ -220,12 +282,14 @@ export async function getInviteDetails(companyId: string, inviteId: string): Pro
         return { 
             ...inviteData, 
             invite_id: inviteSnap.id,
-            companyName: companyData?.company_name 
+            // UPDATED: Get company name from nested map
+            companyName: companyData?.companyInfo.name
         };
     }
     return null;
 }
 
+// UPDATED: Interface for accepting invite
 interface AcceptInviteData {
     companyId: string;
     inviteId: string;
@@ -244,21 +308,19 @@ export async function acceptInvite({ companyId, inviteId, user, role, companyNam
 
     const batch = writeBatch(db);
 
-    const newUserProfileData: Omit<UserProfile, 'created_at'> = {
-        user_id: user.uid,
-        full_name: user.fullName,
-        email: user.email,
-        company_id: companyId,
-        role: role,
-    };
-
-    if (companyName) {
-        newUserProfileData.company_name = companyName;
-    }
-
+    // UPDATED: Create user doc with new nested structure
     batch.set(userRef, {
-        ...newUserProfileData,
-        created_at: serverTimestamp(),
+        id: user.uid,
+        createdAt: serverTimestamp(),
+        profile: {
+            name: user.fullName,
+            email: user.email,
+        },
+        company: {
+            id: companyId,
+            name: companyName || "Unknown Company",
+            role: role,
+        },
     });
 
     batch.update(inviteRef, {
@@ -268,17 +330,18 @@ export async function acceptInvite({ companyId, inviteId, user, role, companyNam
     });
 
     await batch.commit();
+    await createAuditLog(companyId, {id: user.uid, name: user.fullName, email: user.email}, `Accepted invitation and joined the company.`);
 }
 
-
-export async function updateUserProfile(uid: string, data: { full_name: string; phone_number?: string; }): Promise<void> {
+// UPDATED: Data now refers to fields inside the 'profile' map
+export async function updateUserProfile(uid: string, data: { name: string; phone_number?: string; }): Promise<void> {
     const userRef = doc(db, "users", uid);
     const updateData: { [key: string]: any } = {
-        full_name: data.full_name,
+        'profile.name': data.name,
     };
 
     if (data.phone_number !== undefined) {
-        updateData.phone_number = data.phone_number;
+        updateData['profile.phone_number'] = data.phone_number;
     }
     
     await updateDoc(userRef, updateData);
@@ -286,24 +349,30 @@ export async function updateUserProfile(uid: string, data: { full_name: string; 
 
 /**
  * Updates the role of a specific user.
- * This function can only be called by an authenticated Admin user.
  * @param uid The ID of the user to update.
  * @param newRole The new role to assign to the user.
+ * @param actor The admin performing the action.
+ * @param companyId The ID of the company for audit logging.
  */
-export async function updateUserRole(uid: string, newRole: string): Promise<void> {
+export async function updateUserRole(uid: string, newRole: string, actor: Actor, companyId: string): Promise<void> {
     const userRef = doc(db, "users", uid);
+    // UPDATED: Update the nested role field
     await updateDoc(userRef, {
-        role: newRole
+        'company.role': newRole
     });
+    const targetUser = await getUserProfile(uid);
+    const targetName = targetUser?.profile.name || 'Unknown User';
+    await createAuditLog(companyId, actor, `Changed role for ${targetName} to "${newRole}".`);
 }
 
 /**
  * Removes a user from the company by deleting their user profile document.
- * This revokes their access to the company's data. Note: this does not
- * delete their Firebase Authentication account.
- * @param uid The ID of the user to remove.
+ * @param user The user profile of the user to remove.
+ * @param actor The admin performing the action.
  */
-export async function removeUserFromCompany(uid: string): Promise<void> {
-    const userRef = doc(db, "users", uid);
+export async function removeUserFromCompany(user: UserProfile, actor: Actor): Promise<void> {
+    const userRef = doc(db, "users", user.id);
     await deleteDoc(userRef);
+
+    await createAuditLog(user.company.id, actor, `Removed user ${user.profile.name} (${user.profile.email}) from the company.`);
 }

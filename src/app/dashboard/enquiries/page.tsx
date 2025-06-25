@@ -17,13 +17,17 @@ export default function EnquiriesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // A platform admin is an Admin of the "Cloud Morphix" company.
+  const isPlatformAdmin = userProfile?.role === "Admin" && userProfile?.companyName === "Cloud Morphix";
+
   useEffect(() => {
-    if (!authLoading && userProfile?.role !== "Admin") {
-      setLoading(false);
+    // Wait for authentication to resolve before doing anything.
+    if (authLoading) {
       return;
     }
     
-    if (userProfile) {
+    // Only fetch data if the user is a platform admin.
+    if (isPlatformAdmin) {
       getContacts()
         .then(setEnquiries)
         .catch((err) => {
@@ -31,21 +35,25 @@ export default function EnquiriesPage() {
           setError("Could not load enquiries. Please try again later.");
         })
         .finally(() => setLoading(false));
+    } else {
+      // If not a platform admin, we're done loading.
+      setLoading(false);
     }
-  }, [userProfile, authLoading]);
+  }, [isPlatformAdmin, authLoading]);
 
   if (authLoading || loading) {
     return <LoadingSpinner />;
   }
 
-  if (userProfile?.role !== "Admin") {
+  // If the user is not a platform admin, deny access.
+  if (!isPlatformAdmin) {
     return (
       <div className="container mx-auto p-4 sm:p-6 lg:p-8">
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Access Denied</AlertTitle>
           <AlertDescription>
-            You must be an Administrator to view enquiries.
+            This page is only available to Cloud Morphix platform administrators.
           </AlertDescription>
         </Alert>
       </div>
@@ -109,5 +117,3 @@ export default function EnquiriesPage() {
     </div>
   );
 }
-
-    

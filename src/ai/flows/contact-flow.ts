@@ -10,7 +10,7 @@
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
 
-export const ContactFormInputSchema = z.object({
+const ContactFormInputSchema = z.object({
   name: z.string().describe('The full name of the person submitting the form.'),
   email: z.string().email().describe('The email address of the person.'),
   companyName: z.string().describe('The company name of the person.'),

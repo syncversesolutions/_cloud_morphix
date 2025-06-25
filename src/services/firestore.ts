@@ -213,13 +213,50 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
 
 export async function getCompanyUsers(companyId: string): Promise<UserProfile[]> {
     const usersRef = collection(db, "companies", companyId, "users");
-    const usersSnapshot = await getDocs(usersRef);
+    const rolesRef = collection(db, "companies", companyId, "roles");
+    const companyRef = doc(db, "companies", companyId);
+
+    // Fetch all needed data in parallel
+    const [usersSnapshot, rolesSnapshot, companySnap] = await Promise.all([
+        getDocs(usersRef),
+        getDocs(rolesRef),
+        getDoc(companyRef)
+    ]);
+
+    if (!companySnap.exists()) {
+        throw new Error("Company not found");
+    }
+
+    const companyData = companySnap.data() as Omit<Company, 'id'>;
+    const companyName = companyData.company_name;
+
+    // Create a map of role names to their permissions for easy lookup
+    const rolesMap = new Map<string, string[]>();
+    rolesSnapshot.forEach(doc => {
+        const roleData = doc.data();
+        rolesMap.set(roleData.role_name, roleData.allowed_actions || []);
+    });
+
+    const userProfiles: UserProfile[] = usersSnapshot.docs.map(doc => {
+        const userData = doc.data();
+        const userRole = userData.role || "";
+        const allowed_actions = rolesMap.get(userRole) || [];
+        
+        return {
+            id: doc.id,
+            fullName: userData.fullName,
+            email: userData.email,
+            role: userRole,
+            allowed_actions: allowed_actions,
+            dashboardUrl: userData.dashboardUrl,
+            isActive: userData.isActive,
+            createdAt: userData.createdAt,
+            companyId: companyId,
+            companyName: companyName,
+        };
+    });
     
-    // Pass the companyId to getUserProfile to avoid a permission-denied lookup.
-    const userPromises = usersSnapshot.docs.map(doc => getUserProfile(doc.id, companyId));
-    const users = (await Promise.all(userPromises)).filter(p => p !== null) as UserProfile[];
-    
-    return users;
+    return userProfiles;
 }
 
 export async function getCompanyInvites(companyId: string, showAll: boolean = false): Promise<Invite[]> {

@@ -311,6 +311,9 @@ export async function createInvite(companyId: string, email: string, fullName: s
         throw new Error("Cannot create invite for a non-existent company.");
     }
     const companyData = companySnap.data();
+    if (!companyData) {
+        throw new Error("Could not read company data, possibly due to permissions.");
+    }
     const companyName = companyData.company_name || "Your Company";
 
     const invitesRef = collection(db, "companies", companyId, "invites");
@@ -351,7 +354,7 @@ interface AcceptInviteData {
     companyName?: string;
 }
 
-export async function acceptInvite({ companyId, inviteId, user, role }: AcceptInviteData): Promise<void> {
+export async function acceptInvite({ companyId, inviteId, user, role, companyName }: AcceptInviteData): Promise<void> {
     const userRef = doc(db, "companies", companyId, "users", user.uid);
     const inviteRef = doc(db, "companies", companyId, "invites", inviteId);
     const lookupRef = doc(db, "user_company_lookup", user.uid);

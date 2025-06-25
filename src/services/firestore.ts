@@ -1,6 +1,9 @@
 
 import { doc, getDoc, setDoc, serverTimestamp, collection, writeBatch, query, where, getDocs, addDoc, updateDoc, deleteDoc, arrayUnion, orderBy, Timestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { db, firebaseConfig } from "@/lib/firebase";
+import { initializeApp, deleteApp } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
+import { z } from 'zod';
 
 export interface Role {
     id: string;
@@ -33,17 +36,24 @@ export interface Company {
     // The 'roles' array is now deprecated in favor of the 'roles' sub-collection.
 }
 
-export interface Invite {
-    invite_id: string;
-    email: string;
-    full_name: string;
-    role: string;
-    status: "pending" | "accepted";
-    created_at: any;
-    companyName?: string;
-    accepted_at?: any;
-    accepted_by_uid?: string;
-}
+// This is defined here to be the single source of truth for user creation validation.
+export const addUserFormSchema = z.object({
+  fullName: z.string().min(2, 'Full name must be at least 2 characters.'),
+  email: z.string().email('Please enter a valid email address.'),
+  role: z.string().min(1, 'You must select a role.'),
+  password: z.string().refine(password => {
+    const hasUppercase = /[A-Z]/.test(password);
+    const hasLowercase = /[a-z]/.test(password);
+    const hasNumber = /\d/.test(password);
+    const hasSpecialChar = /[@$!%*?&]/.test(password);
+    const hasValidLength = password.length >= 8 && password.length <= 16;
+    return hasUppercase && hasLowercase && hasNumber && hasSpecialChar && hasValidLength;
+  }, {
+    message: "Password does not meet security requirements."
+  }),
+});
+export type AddUserInput = z.infer<typeof addUserFormSchema>;
+
 
 export interface Contact {
   id: string;
@@ -81,21 +91,16 @@ async function createAuditLog(companyId: string, actor: Actor, message: string) 
 }
 
 // Re-fetches the user profile and merges it with their role's permissions.
-// Now accepts an optional companyId to bypass the lookup for performance and security.
-export async function getUserProfile(uid: string, companyId_optional?: string): Promise<UserProfile | null> {
-    let companyId = companyId_optional;
+export async function getUserProfile(uid: string): Promise<UserProfile | null> {
+    const lookupRef = doc(db, "user_company_lookup", uid);
+    const lookupSnap = await getDoc(lookupRef);
 
-    if (!companyId) {
-        const lookupRef = doc(db, "user_company_lookup", uid);
-        const lookupSnap = await getDoc(lookupRef);
-
-        if (!lookupSnap.exists()) {
-            console.log("No company lookup found for user:", uid);
-            return null;
-        }
-        companyId = lookupSnap.data().companyId;
+    if (!lookupSnap.exists()) {
+        console.log("No company lookup found for user:", uid);
+        return null;
     }
-
+    const companyId = lookupSnap.data().companyId;
+    
     if (!companyId) return null;
 
     const companyRef = doc(db, "companies", companyId);
@@ -211,6 +216,44 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
     );
 }
 
+// Creates a new user in Auth and Firestore without logging out the current admin.
+export async function createUserInCompany(companyId: string, data: AddUserInput, actor: Actor): Promise<void> {
+    const tempAppName = `temp-user-creation-${Date.now()}`;
+    const tempApp = initializeApp(firebaseConfig, tempAppName);
+    const tempAuth = getAuth(tempApp);
+
+    try {
+        // Step 1: Create user in Firebase Authentication
+        const userCredential = await createUserWithEmailAndPassword(tempAuth, data.email, data.password);
+        const newUserUid = userCredential.user.uid;
+
+        // Step 2: Create user profile in Firestore
+        const userRef = doc(db, "companies", companyId, "users", newUserUid);
+        const lookupRef = doc(db, "user_company_lookup", newUserUid);
+        const batch = writeBatch(db);
+
+        batch.set(userRef, {
+            fullName: data.fullName,
+            email: data.email,
+            role: data.role,
+            dashboardUrl: null,
+            isActive: true,
+            createdAt: serverTimestamp(),
+        });
+        batch.set(lookupRef, { companyId: companyId });
+        await batch.commit();
+        
+        await createAuditLog(companyId, actor, `Created a new user account for ${data.fullName} (${data.email}) with role "${data.role}".`);
+    } catch(error) {
+        console.error("Error creating user:", error);
+        throw error; // Re-throw to be handled by the UI
+    } finally {
+        // Step 3: Clean up the temporary Firebase app instance
+        await deleteApp(tempApp);
+    }
+}
+
+
 export async function getCompanyUsers(companyId: string): Promise<UserProfile[]> {
     const usersRef = collection(db, "companies", companyId, "users");
     const rolesRef = collection(db, "companies", companyId, "roles");
@@ -259,38 +302,16 @@ export async function getCompanyUsers(companyId: string): Promise<UserProfile[]>
     return userProfiles;
 }
 
-export async function getCompanyInvites(companyId: string, showAll: boolean = false): Promise<Invite[]> {
-    const invitesRef = collection(db, "companies", companyId, "invites");
-    // Fetch all invites ordered by date, then filter in code.
-    // This avoids needing a composite index on 'status' and 'created_at'.
-    const q = query(invitesRef, orderBy("created_at", "desc"));
-    const querySnapshot = await getDocs(q);
-    
-    let invites: Invite[] = [];
-    querySnapshot.forEach((doc) => {
-        invites.push({ invite_id: doc.id, ...doc.data() } as Invite);
-    });
-
-    if (showAll) {
-        return invites;
-    }
-
-    // Filter for pending invites if required.
-    return invites.filter(invite => invite.status === 'pending');
-}
-
 // Fetches roles from the sub-collection.
 export async function getCompanyRoles(companyId: string): Promise<Role[]> {
     const rolesRef = collection(db, "companies", companyId, "roles");
-    // Remove orderBy clause to prevent potential index issues. The list is small.
-    const rolesSnap = await getDocs(rolesRef);
+    const rolesSnap = await getDocs(query(rolesRef, orderBy("role_name")));
     
     const roles: Role[] = [];
     rolesSnap.forEach((doc) => {
-        // The role name is now the ID, so we use doc.id for the 'id' field
         roles.push({ id: doc.id, ...doc.data() } as Role);
     });
-    return roles.sort((a, b) => a.role_name.localeCompare(b.role_name));
+    return roles;
 }
 
 // Adds a new role document to the sub-collection, using the role name as the ID.
@@ -301,88 +322,6 @@ export async function addRole(companyId: string, roleName: string, permissions: 
         allowed_actions: permissions
     });
     await createAuditLog(companyId, actor, `Created new role: "${roleName}".`);
-}
-
-export async function createInvite(companyId: string, email: string, fullName: string, role: string, actor: Actor): Promise<void> {
-    const companyRef = doc(db, "companies", companyId);
-    const companySnap = await getDoc(companyRef);
-    
-    if (!companySnap.exists()) {
-        throw new Error("Cannot create invite for a non-existent company.");
-    }
-    const companyData = companySnap.data();
-    if (!companyData) {
-        throw new Error("Could not read company data, possibly due to permissions.");
-    }
-    const companyName = companyData.company_name || "Your Company";
-
-    const invitesRef = collection(db, "companies", companyId, "invites");
-    await addDoc(invitesRef, {
-        email: email,
-        full_name: fullName,
-        role: role,
-        status: "pending",
-        created_at: serverTimestamp(),
-        companyName: companyName
-    });
-
-    await createAuditLog(companyId, actor, `Sent invitation to ${email} for the role "${role}".`);
-}
-
-export async function getInviteDetails(companyId: string, inviteId: string): Promise<Invite | null> {
-    const inviteRef = doc(db, "companies", companyId, "invites", inviteId);
-    const inviteSnap = await getDoc(inviteRef);
-
-    if (inviteSnap.exists()) {
-        return { 
-            invite_id: inviteSnap.id,
-            ...(inviteSnap.data() as Omit<Invite, 'invite_id'>)
-        };
-    }
-    return null;
-}
-
-interface AcceptInviteData {
-    companyId: string;
-    inviteId: string;
-    user: {
-        uid: string;
-        email: string;
-        fullName: string;
-    };
-    role: string;
-    companyName?: string;
-}
-
-export async function acceptInvite({ companyId, inviteId, user, role, companyName }: AcceptInviteData): Promise<void> {
-    const userRef = doc(db, "companies", companyId, "users", user.uid);
-    const inviteRef = doc(db, "companies", companyId, "invites", inviteId);
-    const lookupRef = doc(db, "user_company_lookup", user.uid);
-
-    const batch = writeBatch(db);
-
-    // 1. Create the User Document in the sub-collection
-    batch.set(userRef, {
-        fullName: user.fullName,
-        email: user.email,
-        role: role,
-        dashboardUrl: null,
-        isActive: true,
-        createdAt: serverTimestamp(),
-    });
-
-    // 2. Update the invite status
-    batch.update(inviteRef, {
-        status: 'accepted',
-        accepted_at: serverTimestamp(),
-        accepted_by_uid: user.uid
-    });
-
-    // 3. Create the lookup document
-    batch.set(lookupRef, { companyId: companyId });
-
-    await batch.commit();
-    await createAuditLog(companyId, {id: user.uid, name: user.fullName, email: user.email}, `Accepted invitation and joined the company.`);
 }
 
 export async function updateUserProfile(uid: string, companyId: string, data: { name: string; }): Promise<void> {
@@ -406,6 +345,12 @@ export async function updateUserRole(uid: string, newRole: string, actor: Actor,
 }
 
 export async function removeUserFromCompany(user: UserProfile, actor: Actor): Promise<void> {
+    // This is a placeholder for a secure way to delete a Firebase Auth user.
+    // The client-side SDK cannot delete other users. This requires the Admin SDK.
+    // For now, we will just remove the user from the company in Firestore.
+    // A future implementation would call a Cloud Function to delete the Auth user.
+    console.warn(`User ${user.email} was removed from the company in Firestore, but their Auth account still exists.`);
+
     const userRef = doc(db, "companies", user.companyId, "users", user.id);
     const lookupRef = doc(db, "user_company_lookup", user.id);
     

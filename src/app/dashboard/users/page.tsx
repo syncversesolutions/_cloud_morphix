@@ -3,14 +3,14 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useAuth, type UserProfile } from "@/hooks/use-auth";
-import { getCompanyUsers, getCompanyRoles, addRole, createInvite, getCompanyInvites, type Invite, updateUserRole, removeUserFromCompany, type Role } from "@/services/firestore";
+import { getCompanyUsers, getCompanyRoles, addRole, createUserInCompany, removeUserFromCompany, type Role, type AddUserInput } from "@/services/firestore";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { ShieldPlus, UserPlus, MoreHorizontal, AlertTriangle, Copy } from "lucide-react";
+import { ShieldPlus, UserPlus, MoreHorizontal, AlertTriangle } from "lucide-react";
 import ManageRolesDialog from "@/components/dashboard/manage-roles-dialog";
-import InviteUserDialog from "@/components/dashboard/invite-user-dialog";
+import AddUserDialog from "@/components/dashboard/invite-user-dialog"; // Renamed to AddUserDialog internally
 import { useToast } from "@/hooks/use-toast";
 import LoadingSpinner from "@/components/loading-spinner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
@@ -18,26 +18,14 @@ import ChangeRoleDialog from "@/components/dashboard/change-role-dialog";
 import RemoveUserDialog from "@/components/dashboard/remove-user-dialog";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 
-type TeamMember = {
-    id: string;
-    type: 'user' | 'invite';
-    fullName: string;
-    email: string;
-    role: string;
-    status: 'accepted' | 'pending';
-    originalProfile: UserProfile | null;
-    inviteId?: string;
-};
-
 export default function UserManagementPage() {
   const { user, userProfile, loading: authLoading, refreshUserProfile } = useAuth();
   const { toast } = useToast();
   const [users, setUsers] = useState<UserProfile[]>([]);
-  const [invites, setInvites] = useState<Invite[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [isRolesDialogOpen, setIsRolesDialogOpen] = useState(false);
-  const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
+  const [isAddUserDialogOpen, setIsAddUserDialogOpen] = useState(false);
 
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [isChangeRoleDialogOpen, setIsChangeRoleDialogOpen] = useState(false);
@@ -51,14 +39,12 @@ export default function UserManagementPage() {
     if (!companyId) return;
     setLoading(true);
     try {
-      const [fetchedUsers, fetchedRoles, fetchedInvites] = await Promise.all([
+      const [fetchedUsers, fetchedRoles] = await Promise.all([
         getCompanyUsers(companyId),
         getCompanyRoles(companyId),
-        getCompanyInvites(companyId, false) // Only fetch pending invites
       ]);
       
       setUsers(fetchedUsers);
-      setInvites(fetchedInvites);
       setRoles(fetchedRoles);
 
     } catch (error: any) {
@@ -107,38 +93,30 @@ export default function UserManagementPage() {
       return false;
     }
   };
-
-  const handleInviteUser = async (fullName: string, email: string, role: string) => {
+  
+  const handleAddUser = async (values: AddUserInput) => {
     const actor = getActor();
-    if (!companyId || !actor) return false;
+    if (!companyId || !actor) {
+        toast({ variant: "destructive", title: "Error", description: "Cannot identify the current administrator." });
+        return false;
+    }
     try {
-      await createInvite(companyId, email, fullName, role, actor);
-      toast({ title: "Success", description: `Invitation created for ${email}.` });
+      await createUserInCompany(companyId, values, actor);
+      toast({ title: "User Created", description: `An account for ${values.fullName} has been successfully created.` });
       fetchUsersAndRoles();
       return true;
-    } catch (error) {
-      toast({ variant: "destructive", title: "Error", description: "Failed to send invitation." });
+    } catch (error: any) {
+       toast({
+        variant: "destructive",
+        title: "Creation Failed",
+        description: error.code === 'auth/email-already-in-use' 
+          ? 'This email address is already registered.' 
+          : 'Failed to create the user account.',
+      });
       return false;
     }
   };
 
-  const handleCopyInvite = (inviteId?: string) => {
-    if (!inviteId || !companyId) return;
-    const inviteLink = `${window.location.origin}/register/invite?companyId=${companyId}&inviteId=${inviteId}`;
-    navigator.clipboard.writeText(inviteLink).then(() => {
-        toast({
-            title: "Link Copied",
-            description: "The invitation link has been copied to your clipboard.",
-        });
-    }).catch(err => {
-        console.error('Failed to copy text: ', err);
-        toast({
-            variant: "destructive",
-            title: "Copy Failed",
-            description: "Could not copy the link. Please try again.",
-        });
-    });
-  };
 
   const handleChangeRole = async (newRole: string) => {
     const actor = getActor();
@@ -189,36 +167,14 @@ export default function UserManagementPage() {
     );
   }
   
-  const allTeamMembers: TeamMember[] = [
-    ...users.map(u => ({
-      id: u.id,
-      type: 'user' as const,
-      fullName: u.fullName,
-      email: u.email,
-      role: u.role,
-      status: 'accepted' as const,
-      originalProfile: u,
-    })),
-    ...invites
-        .filter(i => i.status === 'pending')
-        .map(i => ({
-          id: i.invite_id,
-          type: 'invite' as const,
-          fullName: i.full_name,
-          email: i.email,
-          role: i.role,
-          status: 'pending' as const,
-          originalProfile: null,
-          inviteId: i.invite_id
-        }))
-  ].sort((a, b) => a.fullName.localeCompare(b.fullName));
+  const sortedUsers = [...users].sort((a, b) => a.fullName.localeCompare(b.fullName));
 
   return (
     <div className="container mx-auto p-4 sm:p-6 lg:p-8">
       <div className="flex items-center justify-between mb-6">
         <div>
             <h2 className="text-3xl font-bold tracking-tight font-headline">User Management</h2>
-            <p className="text-muted-foreground">Invite new users and manage roles for your company.</p>
+            <p className="text-muted-foreground">Add new users and manage roles for your company.</p>
         </div>
         <div className="flex gap-2">
           {canManageRoles && (
@@ -227,9 +183,9 @@ export default function UserManagementPage() {
               Manage Roles
             </Button>
           )}
-          <Button onClick={() => setIsInviteDialogOpen(true)}>
+          <Button onClick={() => setIsAddUserDialogOpen(true)}>
             <UserPlus className="mr-2" />
-            Invite User
+            Add User
           </Button>
         </div>
       </div>
@@ -237,7 +193,7 @@ export default function UserManagementPage() {
       <Card>
         <CardHeader>
           <CardTitle>Company Users</CardTitle>
-          <CardDescription>A list of all users in your company, including pending invitations.</CardDescription>
+          <CardDescription>A list of all users in your company.</CardDescription>
         </CardHeader>
         <CardContent>
             <Table>
@@ -245,25 +201,21 @@ export default function UserManagementPage() {
                 <TableRow>
                     <TableHead>Full Name</TableHead>
                     <TableHead>Email</TableHead>
-                    <TableHead>Status / Role</TableHead>
+                    <TableHead>Role</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
                 </TableHeader>
                 <TableBody>
-                {allTeamMembers.length > 0 ? (
-                    allTeamMembers.map((member) => (
-                    <TableRow key={member.id}>
-                        <TableCell className="font-medium">{member.fullName}</TableCell>
-                        <TableCell>{member.email}</TableCell>
+                {sortedUsers.length > 0 ? (
+                    sortedUsers.map((user) => (
+                    <TableRow key={user.id}>
+                        <TableCell className="font-medium">{user.fullName}</TableCell>
+                        <TableCell>{user.email}</TableCell>
                         <TableCell>
-                        {member.type === 'user' ? (
-                            <Badge variant={member.role === 'Admin' ? 'default' : 'secondary'}>{member.role}</Badge>
-                        ) : (
-                            <Badge variant="outline">Pending Invitation</Badge>
-                        )}
+                            <Badge variant={user.role === 'Admin' ? 'default' : 'secondary'}>{user.role}</Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                            {member.type === 'user' && userProfile?.id !== member.id ? (
+                            {userProfile?.id !== user.id ? (
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
                                     <Button variant="ghost" className="h-8 w-8 p-0">
@@ -274,10 +226,8 @@ export default function UserManagementPage() {
                                     <DropdownMenuContent align="end">
                                     <DropdownMenuItem
                                         onClick={() => {
-                                        if (member.originalProfile) {
-                                            setSelectedUser(member.originalProfile);
+                                            setSelectedUser(user);
                                             setIsChangeRoleDialogOpen(true);
-                                        }
                                         }}
                                     >
                                         Change Role
@@ -286,21 +236,14 @@ export default function UserManagementPage() {
                                     <DropdownMenuItem
                                         className="text-destructive"
                                         onClick={() => {
-                                        if (member.originalProfile) {
-                                            setSelectedUser(member.originalProfile);
+                                            setSelectedUser(user);
                                             setIsRemoveUserDialogOpen(true);
-                                        }
                                         }}
                                     >
                                         Remove User
                                     </DropdownMenuItem>
                                     </DropdownMenuContent>
                                 </DropdownMenu>
-                            ) : member.type === 'invite' ? (
-                                <Button variant="outline" size="sm" onClick={() => handleCopyInvite(member.inviteId)}>
-                                    <Copy className="mr-2" />
-                                    Copy Link
-                                </Button>
                             ) : null}
                         </TableCell>
                     </TableRow>
@@ -324,11 +267,11 @@ export default function UserManagementPage() {
         onAddRole={handleAddRole}
       />
 
-      <InviteUserDialog
-        isOpen={isInviteDialogOpen}
-        onOpenChange={setIsInviteDialogOpen}
-        roles={roles.filter(r => r.role_name !== 'Admin')} // Cannot assign Admin via invite
-        onInviteUser={handleInviteUser}
+      <AddUserDialog
+        isOpen={isAddUserDialogOpen}
+        onOpenChange={setIsAddUserDialogOpen}
+        roles={roles.filter(r => r.role_name !== 'Admin')} // Cannot assign Admin directly
+        onAddUser={handleAddUser}
        />
        
       {selectedUser && (

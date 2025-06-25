@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { ShieldPlus, UserPlus, MoreHorizontal, AlertTriangle } from "lucide-react";
+import { ShieldPlus, UserPlus, MoreHorizontal, AlertTriangle, Copy } from "lucide-react";
 import ManageRolesDialog from "@/components/dashboard/manage-roles-dialog";
 import InviteUserDialog from "@/components/dashboard/invite-user-dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -113,7 +113,7 @@ export default function UserManagementPage() {
     if (!companyId || !actor) return false;
     try {
       await createInvite(companyId, email, fullName, role, actor);
-      toast({ title: "Success", description: `Invitation sent to ${email}.` });
+      toast({ title: "Success", description: `Invitation created for ${email}.` });
       fetchUsersAndRoles();
       return true;
     } catch (error) {
@@ -122,13 +122,30 @@ export default function UserManagementPage() {
     }
   };
 
+  const handleCopyInvite = (inviteId?: string) => {
+    if (!inviteId || !companyId) return;
+    const inviteLink = `${window.location.origin}/register/invite?companyId=${companyId}&inviteId=${inviteId}`;
+    navigator.clipboard.writeText(inviteLink).then(() => {
+        toast({
+            title: "Link Copied",
+            description: "The invitation link has been copied to your clipboard.",
+        });
+    }).catch(err => {
+        console.error('Failed to copy text: ', err);
+        toast({
+            variant: "destructive",
+            title: "Copy Failed",
+            description: "Could not copy the link. Please try again.",
+        });
+    });
+  };
+
   const handleChangeRole = async (newRole: string) => {
     const actor = getActor();
     if (!selectedUser || !actor || !companyId) return false;
     try {
       await updateUserRole(selectedUser.id, newRole, actor, companyId);
       toast({ title: "Success", description: `${selectedUser.fullName}'s role has been updated to ${newRole}.`});
-      // If the admin changes their own role, refresh their permissions.
       if (selectedUser.id === userProfile?.id) {
           await refreshUserProfile();
       }
@@ -246,40 +263,45 @@ export default function UserManagementPage() {
                         )}
                         </TableCell>
                         <TableCell className="text-right">
-                            {member.type === 'user' && userProfile.id !== member.id && (
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" className="h-8 w-8 p-0">
-                                    <span className="sr-only">Open menu</span>
-                                    <MoreHorizontal className="h-4 w-4" />
+                            {member.type === 'user' && userProfile?.id !== member.id ? (
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" className="h-8 w-8 p-0">
+                                        <span className="sr-only">Open menu</span>
+                                        <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                    <DropdownMenuItem
+                                        onClick={() => {
+                                        if (member.originalProfile) {
+                                            setSelectedUser(member.originalProfile);
+                                            setIsChangeRoleDialogOpen(true);
+                                        }
+                                        }}
+                                    >
+                                        Change Role
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                        className="text-destructive"
+                                        onClick={() => {
+                                        if (member.originalProfile) {
+                                            setSelectedUser(member.originalProfile);
+                                            setIsRemoveUserDialogOpen(true);
+                                        }
+                                        }}
+                                    >
+                                        Remove User
+                                    </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                            ) : member.type === 'invite' ? (
+                                <Button variant="outline" size="sm" onClick={() => handleCopyInvite(member.inviteId)}>
+                                    <Copy className="mr-2" />
+                                    Copy Link
                                 </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                    onClick={() => {
-                                    if (member.originalProfile) {
-                                        setSelectedUser(member.originalProfile);
-                                        setIsChangeRoleDialogOpen(true);
-                                    }
-                                    }}
-                                >
-                                    Change Role
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                    className="text-destructive"
-                                    onClick={() => {
-                                    if (member.originalProfile) {
-                                        setSelectedUser(member.originalProfile);
-                                        setIsRemoveUserDialogOpen(true);
-                                    }
-                                    }}
-                                >
-                                    Remove User
-                                </DropdownMenuItem>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
-                            )}
+                            ) : null}
                         </TableCell>
                     </TableRow>
                     ))

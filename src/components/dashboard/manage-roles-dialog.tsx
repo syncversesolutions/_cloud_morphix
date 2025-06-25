@@ -63,7 +63,7 @@ export default function ManageRolesDialog({ isOpen, onOpenChange, roles, onAddRo
                 <h4 className="text-sm font-medium mb-2">Existing Roles</h4>
                 <div className="flex flex-wrap gap-2">
                     {roles.length > 0 ? roles.map((role) => (
-                        <Badge key={role} variant="secondary">{role}</Badge>
+                        <Badge key={role} variant={role === 'Admin' ? 'default' : 'secondary'}>{role}</Badge>
                     )) : <p className="text-sm text-muted-foreground">No custom roles added yet.</p>}
                 </div>
             </div>

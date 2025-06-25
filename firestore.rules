@@ -3,64 +3,42 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Helper functions to make rules reusable and readable.
-    function isUserAuthenticated() {
-      return request.auth != null;
-    }
+    function isUserAuthenticated() { return request.auth != null; }
+    function isUserProfileOwner(userId) { return request.auth.uid == userId; }
+    function getUserData() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function getUserCompanyId() { return getUserData().company.id; }
+    function isUserAdmin() { return getUserData().company.role == 'Admin'; }
+    function isUserInCompany(companyId) { return isUserAuthenticated() && getUserCompanyId() == companyId; }
 
-    function isUserProfileOwner(userId) {
-      return request.auth.uid == userId;
-    }
-
-    function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-    }
-    
-    function getUserCompanyId() {
-      return getUserData().company.id;
-    }
-    
-    function isUserAdmin() {
-      return getUserData().company.role == 'Admin';
-    }
-
-    function isUserInCompany(companyId) {
-      return isUserAuthenticated() && getUserCompanyId() == companyId;
-    }
-
-    // USERS collection rules
     match /users/{userId} {
       allow create: if isUserAuthenticated();
       
-      // Corrected Read Rule: An admin can read any user in their own company. A user can read their own profile.
-      // This rule works for both single document 'get' and collection 'list' queries.
+      // CORRECTED: This rule now properly allows an admin to list all users in their company.
       allow read: if isUserProfileOwner(userId) || (isUserAdmin() && resource.data.company.id == getUserCompanyId());
       
-      // Update Rule: A user can only update their own 'profile' map. An admin can update another user's 'company' map (e.g. role).
-      allow update: if (isUserProfileOwner(userId) && request.resource.data.diff(resource.data).affectedKeys.hasOnly(['profile']))
-                   || (isUserAdmin() && isUserInCompany(resource.data.company.id) && request.resource.data.diff(resource.data).affectedKeys.hasOnly(['company']));
-
-      // Delete Rule: An admin can delete a user from their own company.
-      allow delete: if isUserAdmin() && isUserInCompany(resource.data.company.id);
+      allow update: if (isUserProfileOwner(userId) && request.resource.data.keys().hasOnly(['profile']))
+                   || (isUserAdmin() && isUserInCompany(get(/databases/$(database)/documents/users/$(userId)).data.company.id) && request.resource.data.keys().hasOnly(['company']));
+                   
+      allow delete: if isUserAdmin() && isUserInCompany(get(/databases/$(database)/documents/users/$(userId)).data.company.id);
     }
 
-    // COMPANIES collection rules
     match /companies/{companyId} {
       allow create: if isUserAuthenticated();
       allow read: if isUserInCompany(companyId);
       allow update: if isUserAdmin() && isUserInCompany(companyId);
-      allow delete: if false; // Deletes should be handled server-side.
+      allow delete: if false;
 
-      // SUBCOLLECTION rules
+      // SUBCOLLECTIONS
       match /invites/{inviteId} {
-          allow read: if isUserInCompany(companyId) || resource.data.status == 'pending';
+          // CORRECTED: Allows admins to read all invites, not just pending ones.
+          allow read: if (isUserAdmin() && isUserInCompany(companyId)) || resource.data.status == 'pending';
           allow create: if isUserAdmin() && isUserInCompany(companyId);
-          allow update: if request.resource.data.status == 'accepted'; // For users accepting invites.
+          allow update: if request.resource.data.status == 'accepted';
       }
       
       match /audit_logs/{logId} {
         allow read: if isUserAdmin() && isUserInCompany(companyId);
-        allow write: if false; // Write only from backend.
+        allow write: if false;
       }
     }
   }

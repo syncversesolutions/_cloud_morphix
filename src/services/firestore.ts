@@ -79,7 +79,7 @@ export async function getDashboardUrl(uid: string): Promise<string | null> {
         } catch (error: any) {
             if (error.code === 'permission-denied') {
                 console.log("User does not have permission to view company-level dashboard URL. This is expected for non-admins.");
-                return null;
+                throw error;
             }
             console.error("An unexpected error occurred while fetching dashboard URL:", error);
             return null; 
@@ -129,7 +129,7 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
             lookerUrl: null,
         },
         // NEW: Roles are now stored in an array on the company document
-        roles: ["Admin"],
+        roles: ["Admin", "Viewer", "Analyst"],
     });
 
     // UPDATED: Write user document with new nested structure
@@ -292,18 +292,14 @@ export async function createInvite(companyId: string, email: string, fullName: s
 
 export async function getInviteDetails(companyId: string, inviteId: string): Promise<Invite | null> {
     const inviteRef = doc(db, "companies", companyId, "invites", inviteId);
-    const companyRef = doc(db, "companies", companyId);
-    
-    const [inviteSnap, companySnap] = await Promise.all([getDoc(inviteRef), getDoc(companyRef)]);
+    const inviteSnap = await getDoc(inviteRef);
 
     if (inviteSnap.exists()) {
-        const inviteData = inviteSnap.data() as Omit<Invite, 'invite_id'>;
-        const companyData = companySnap.exists() ? companySnap.data() : null;
+        // The invite document already contains the companyName, so we don't need
+        // a separate, permission-failing read on the main company document.
         return { 
-            ...inviteData, 
             invite_id: inviteSnap.id,
-            // UPDATED: Get company name from nested map
-            companyName: companyData?.companyInfo.name
+            ...(inviteSnap.data() as Omit<Invite, 'invite_id'>)
         };
     }
     return null;

@@ -81,16 +81,21 @@ async function createAuditLog(companyId: string, actor: Actor, message: string) 
 }
 
 // Re-fetches the user profile and merges it with their role's permissions.
-export async function getUserProfile(uid: string): Promise<UserProfile | null> {
-    const lookupRef = doc(db, "user_company_lookup", uid);
-    const lookupSnap = await getDoc(lookupRef);
+// Now accepts an optional companyId to bypass the lookup for performance and security.
+export async function getUserProfile(uid: string, companyId_optional?: string): Promise<UserProfile | null> {
+    let companyId = companyId_optional;
 
-    if (!lookupSnap.exists()) {
-        console.log("No company lookup found for user:", uid);
-        return null;
+    if (!companyId) {
+        const lookupRef = doc(db, "user_company_lookup", uid);
+        const lookupSnap = await getDoc(lookupRef);
+
+        if (!lookupSnap.exists()) {
+            console.log("No company lookup found for user:", uid);
+            return null;
+        }
+        companyId = lookupSnap.data().companyId;
     }
 
-    const { companyId } = lookupSnap.data();
     if (!companyId) return null;
 
     const companyRef = doc(db, "companies", companyId);
@@ -210,7 +215,8 @@ export async function getCompanyUsers(companyId: string): Promise<UserProfile[]>
     const usersRef = collection(db, "companies", companyId, "users");
     const usersSnapshot = await getDocs(usersRef);
     
-    const userPromises = usersSnapshot.docs.map(doc => getUserProfile(doc.id));
+    // Pass the companyId to getUserProfile to avoid a permission-denied lookup.
+    const userPromises = usersSnapshot.docs.map(doc => getUserProfile(doc.id, companyId));
     const users = (await Promise.all(userPromises)).filter(p => p !== null) as UserProfile[];
     
     return users;

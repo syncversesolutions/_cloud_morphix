@@ -55,7 +55,7 @@ export default function UserManagementPage() {
       const [fetchedUsers, fetchedRoles, fetchedInvites] = await Promise.all([
         getCompanyUsers(companyId),
         getCompanyRoles(companyId),
-        getCompanyInvites(companyId)
+        getCompanyInvites(companyId, false) // Only fetch pending invites
       ]);
       
       let currentRoles = fetchedRoles;
@@ -73,7 +73,7 @@ export default function UserManagementPage() {
     } catch (error: any) {
       console.error("Failed to fetch user management data:", error);
       if (error.code === 'permission-denied' || error.code === 'failed-precondition') {
-         setPermissionError("You do not have permission to view this data. Please contact your administrator or check your Firestore security rules.");
+         setPermissionError("You do not have the required permissions to manage users. Please contact your administrator or ensure your Firestore security rules are configured correctly for admin access.");
       } else {
         toast({
             variant: "destructive",
@@ -177,8 +177,13 @@ export default function UserManagementPage() {
   if (userProfile?.company.role !== "Admin") {
     return (
       <div className="container mx-auto p-4 sm:p-6 lg:p-8">
-        <h1 className="text-2xl font-bold">Access Denied</h1>
-        <p>You do not have permission to view this page.</p>
+        <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Access Denied</AlertTitle>
+            <AlertDescription>
+                You must be an Administrator to access this page.
+            </AlertDescription>
+        </Alert>
       </div>
     );
   }

@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -6,10 +7,12 @@ import { useAuth } from "@/hooks/use-auth";
 import DashboardEmbed from "@/components/dashboard/dashboard-embed";
 import LoadingSpinner from "@/components/loading-spinner";
 import { getDashboardUrl } from "@/services/firestore";
+import { useToast } from "@/hooks/use-toast";
 
 export default function DashboardPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+  const { toast } = useToast();
   const [dashboardUrl, setDashboardUrl] = useState<string | null>(null);
   const [loadingUrl, setLoadingUrl] = useState(true);
 
@@ -25,9 +28,15 @@ export default function DashboardPage() {
         .then((url) => {
           setDashboardUrl(url);
         })
-        .catch((error) => {
+        .catch((error: any) => {
           console.error("Failed to get dashboard URL:", error);
-          // You could add a toast notification here if you like
+          toast({
+            variant: "destructive",
+            title: "Dashboard Error",
+            description: error.code === 'permission-denied' 
+              ? "You do not have permission to view this dashboard. Please contact your administrator."
+              : "Could not load the dashboard configuration.",
+          });
         })
         .finally(() => {
           setLoadingUrl(false);
@@ -35,7 +44,7 @@ export default function DashboardPage() {
     } else if (!authLoading) {
       setLoadingUrl(false);
     }
-  }, [user, authLoading]);
+  }, [user, authLoading, toast]);
 
   if (authLoading || loadingUrl) {
     return <LoadingSpinner />;

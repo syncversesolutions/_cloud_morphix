@@ -258,7 +258,7 @@ export async function createInvite(companyId: string, email: string, fullName: s
     await createAuditLog(companyId, actor, `Invited ${fullName} (${email}) with role: "${role}".`);
 }
 
-export async function createInitialAdminRole(companyId: string): Promise<void> {
+export async function createInitialAdminRole(companyId: string, actor: Actor): Promise<void> {
     const adminRoleQuery = query(collection(db, "companies", companyId, "roles"), where("name", "==", "Admin"));
     const existingAdminRole = await getDocs(adminRoleQuery);
     if(existingAdminRole.empty) {
@@ -267,6 +267,7 @@ export async function createInitialAdminRole(companyId: string): Promise<void> {
             name: "Admin",
             created_at: serverTimestamp(),
         });
+        await createAuditLog(companyId, actor, 'Created initial "Admin" role.');
     }
 }
 

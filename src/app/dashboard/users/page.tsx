@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { ShieldPlus, UserPlus, Copy, Check, MoreHorizontal, AlertTriangle } from "lucide-react";
+import { ShieldPlus, UserPlus, MoreHorizontal, AlertTriangle } from "lucide-react";
 import ManageRolesDialog from "@/components/dashboard/manage-roles-dialog";
 import InviteUserDialog from "@/components/dashboard/invite-user-dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -38,7 +38,6 @@ export default function UserManagementPage() {
   const [loading, setLoading] = useState(true);
   const [isRolesDialogOpen, setIsRolesDialogOpen] = useState(false);
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
-  const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
 
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [isChangeRoleDialogOpen, setIsChangeRoleDialogOpen] = useState(false);
@@ -123,15 +122,6 @@ export default function UserManagementPage() {
     }
   };
 
-  const handleCopyInviteLink = (inviteId: string) => {
-    if(!companyId) return;
-    const url = `${window.location.origin}/register/invite?companyId=${companyId}&inviteId=${inviteId}`;
-    navigator.clipboard.writeText(url);
-    setCopiedInviteId(inviteId);
-    toast({ title: "Success", description: "Invite link copied to clipboard." });
-    setTimeout(() => setCopiedInviteId(null), 2000);
-  };
-  
   const handleChangeRole = async (newRole: string) => {
     const actor = getActor();
     if (!selectedUser || !actor || !companyId) return false;
@@ -256,12 +246,6 @@ export default function UserManagementPage() {
                         )}
                         </TableCell>
                         <TableCell className="text-right">
-                            {member.type === 'invite' && member.inviteId && (
-                                <Button variant="ghost" size="sm" onClick={() => handleCopyInviteLink(member.inviteId!)}>
-                                    {copiedInviteId === member.inviteId ? <Check className="mr-2 text-green-500" /> : <Copy className="mr-2" />}
-                                    Copy Link
-                                </Button>
-                            )}
                             {member.type === 'user' && userProfile.id !== member.id && (
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>

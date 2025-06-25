@@ -1,5 +1,5 @@
 
-import { doc, getDoc, setDoc, serverTimestamp, collection, writeBatch, query, where, getDocs, addDoc, updateDoc, deleteDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, serverTimestamp, collection, writeBatch, query, where, getDocs, addDoc, updateDoc, deleteDoc, arrayUnion } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 // NEW STRUCTURE: Actor interface for audit logs
@@ -127,7 +127,9 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
         },
         settings: {
             lookerUrl: null,
-        }
+        },
+        // NEW: Roles are now stored in an array on the company document
+        roles: ["Admin"],
     });
 
     // UPDATED: Write user document with new nested structure
@@ -225,50 +227,67 @@ export async function getCompanyInvites(companyId: string, showAll: boolean = fa
     return invites;
 }
 
+// REWRITTEN: To fetch roles from an array on the company document.
 export async function getCompanyRoles(companyId: string): Promise<string[]> {
-    const rolesRef = collection(db, "companies", companyId, "roles");
-    const querySnapshot = await getDocs(rolesRef);
+    const companyRef = doc(db, "companies", companyId);
+    const companySnap = await getDoc(companyRef);
 
-    const roles: string[] = [];
-    querySnapshot.forEach((doc) => {
-        roles.push(doc.data().name);
-    });
-    const uniqueRoles = [...new Set(roles)];
-    return uniqueRoles.sort();
+    if (companySnap.exists()) {
+        const data = companySnap.data();
+        // Roles are now a simple array on the company doc. Default to empty array.
+        const roles = data.roles || [];
+        return [...new Set(roles)].sort();
+    }
+    return [];
 }
 
+// REWRITTEN: To add a role to the array on the company document.
 export async function addRole(companyId: string, roleName: string, actor: Actor): Promise<void> {
-    const rolesRef = collection(db, "companies", companyId, "roles");
-    await addDoc(rolesRef, {
-        name: roleName,
-        created_at: serverTimestamp(),
+    const companyRef = doc(db, "companies", companyId);
+    // Use arrayUnion to atomically add a new role to the 'roles' array.
+    await updateDoc(companyRef, {
+        roles: arrayUnion(roleName)
     });
     await createAuditLog(companyId, actor, `Created new role: "${roleName}".`);
 }
 
-export async function createInvite(companyId: string, email: string, fullName: string, role: string, actor: Actor): Promise<void> {
-    const invitesRef = collection(db, "companies", companyId, "invites");
-    await addDoc(invitesRef, {
-        email,
-        full_name: fullName,
-        role,
-        status: "pending",
-        created_at: serverTimestamp(),
-    });
-    await createAuditLog(companyId, actor, `Invited ${fullName} (${email}) with role: "${role}".`);
+// REWRITTEN: To ensure initial roles are set using the new array method.
+export async function createInitialAdminRole(companyId: string, actor: Actor): Promise<void> {
+    const companyRef = doc(db, "companies", companyId);
+    const companySnap = await getDoc(companyRef);
+    if(companySnap.exists()) {
+        const companyData = companySnap.data();
+        const roles = companyData.roles || [];
+        if (!roles.includes("Admin")) {
+             await updateDoc(companyRef, {
+                roles: arrayUnion("Admin")
+            });
+            await createAuditLog(companyId, actor, 'Created initial "Admin" role.');
+        }
+    }
 }
 
-export async function createInitialAdminRole(companyId: string, actor: Actor): Promise<void> {
-    const adminRoleQuery = query(collection(db, "companies", companyId, "roles"), where("name", "==", "Admin"));
-    const existingAdminRole = await getDocs(adminRoleQuery);
-    if(existingAdminRole.empty) {
-        const rolesRef = collection(db, "companies", companyId, "roles");
-        await addDoc(rolesRef, {
-            name: "Admin",
-            created_at: serverTimestamp(),
-        });
-        await createAuditLog(companyId, actor, 'Created initial "Admin" role.');
+export async function createInvite(companyId: string, email: string, fullName: string, role: string, actor: Actor): Promise<void> {
+    const companyRef = doc(db, "companies", companyId);
+    const companySnap = await getDoc(companyRef);
+    
+    if (!companySnap.exists()) {
+        throw new Error("Cannot create invite for a non-existent company.");
     }
+    const companyData = companySnap.data();
+    const companyName = companyData.companyInfo?.name || "Your Company";
+
+    const invitesRef = collection(db, "companies", companyId, "invites");
+    await addDoc(invitesRef, {
+        email: email,
+        full_name: fullName,
+        role: role,
+        status: "pending",
+        created_at: serverTimestamp(),
+        companyName: companyName
+    });
+
+    await createAuditLog(companyId, actor, `Sent invitation to ${email} for the role "${role}".`);
 }
 
 export async function getInviteDetails(companyId: string, inviteId: string): Promise<Invite | null> {

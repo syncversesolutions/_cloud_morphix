@@ -49,16 +49,34 @@ export default function UserManagementPage() {
     if (!companyId) return;
     setLoading(true);
     try {
-      const [fetchedUsers, fetchedRoles, fetchedInvites] = await Promise.all([
-        getCompanyUsers(companyId),
-        getCompanyRoles(companyId),
-        getCompanyInvites(companyId),
-      ]);
+      let fetchedUsers: UserProfile[] = [];
+      try {
+          fetchedUsers = await getCompanyUsers(companyId);
+      } catch (error) {
+          console.error("Failed to fetch company users:", error);
+          throw new Error("Could not fetch company users. Please check security rules.");
+      }
+
+      let fetchedRoles: string[] = [];
+      try {
+          fetchedRoles = await getCompanyRoles(companyId);
+      } catch (error) {
+          console.error("Failed to fetch company roles:", error);
+          throw new Error("Could not fetch company roles. Please check security rules.");
+      }
+
+      let fetchedInvites: Invite[] = [];
+      try {
+          fetchedInvites = await getCompanyInvites(companyId);
+      } catch (error) {
+          console.error("Failed to fetch company invites:", error);
+          throw new Error("Could not fetch company invites. Please check security rules.");
+      }
 
       let currentRoles = fetchedRoles;
       if (currentRoles.length === 0 && userProfile && user) {
         const actor = { id: user.uid, name: userProfile.profile.name, email: userProfile.profile.email };
-        await createInitialAdminRole(companyId);
+        await createInitialAdminRole(companyId, actor);
         currentRoles = await getCompanyRoles(companyId);
       }
       
@@ -68,12 +86,12 @@ export default function UserManagementPage() {
       setInvites(fetchedInvites);
       setRoles(uniqueRoles.sort());
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to fetch data:", error);
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to fetch users and roles.",
+        description: error.message || "Failed to fetch users and roles.",
       });
     } finally {
       setLoading(false);

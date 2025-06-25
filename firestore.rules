@@ -30,59 +30,37 @@ service cloud.firestore {
 
     // USERS collection rules
     match /users/{userId} {
-      // A user can create their own document during sign-up.
       allow create: if isUserAuthenticated();
       
-      // A user can read their own profile. An admin can read profiles of users in their company.
-      allow read: if isUserProfileOwner(userId) || (isUserAdmin() && isUserInCompany(get(/databases/$(database)/documents/users/$(userId)).data.company.id));
+      // Corrected Read Rule: An admin can read any user in their own company. A user can read their own profile.
+      // This rule works for both single document 'get' and collection 'list' queries.
+      allow read: if isUserProfileOwner(userId) || (isUserAdmin() && resource.data.company.id == getUserCompanyId());
       
-      // A user can only update their own 'profile' map. They cannot change their company or role.
-      // An admin can update another user's 'company.role'.
-      allow update: if isUserProfileOwner(userId) && request.resource.data.keys().hasOnly(['profile'])
-                   || (isUserAdmin() && request.resource.data.keys().hasOnly(['company']));
+      // Update Rule: A user can only update their own 'profile' map. An admin can update another user's 'company' map (e.g. role).
+      allow update: if (isUserProfileOwner(userId) && request.resource.data.diff(resource.data).affectedKeys.hasOnly(['profile']))
+                   || (isUserAdmin() && isUserInCompany(resource.data.company.id) && request.resource.data.diff(resource.data).affectedKeys.hasOnly(['company']));
 
-      // Only an admin can remove a user from the company (by deleting their document).
-      allow delete: if isUserAdmin();
+      // Delete Rule: An admin can delete a user from their own company.
+      allow delete: if isUserAdmin() && isUserInCompany(resource.data.company.id);
     }
 
     // COMPANIES collection rules
     match /companies/{companyId} {
-      // Any authenticated user can create a company during registration.
       allow create: if isUserAuthenticated();
-
-      // Any user belonging to the company can read the company document.
       allow read: if isUserInCompany(companyId);
-
-      // Only Admins of that company can update company settings.
       allow update: if isUserAdmin() && isUserInCompany(companyId);
-      
-      // Deleting a company should be handled by a backend process, not directly by a client.
-      allow delete: if false;
+      allow delete: if false; // Deletes should be handled server-side.
 
       // SUBCOLLECTION rules
-      
-      // ROLES subcollection
-      match /roles/{roleId} {
-        allow read: if isUserInCompany(companyId);
-        allow create, delete: if isUserAdmin() && isUserInCompany(companyId);
-      }
-      
-      // INVITES subcollection
       match /invites/{inviteId} {
-          // Anyone with a link can read an invite to verify it, but only if it's pending.
-          allow read: if resource.data.status == 'pending';
-          // Admins can create invites.
+          allow read: if isUserInCompany(companyId) || resource.data.status == 'pending';
           allow create: if isUserAdmin() && isUserInCompany(companyId);
-          // Anyone can update an invite to accept it.
-          allow update: if request.resource.data.status == 'accepted';
+          allow update: if request.resource.data.status == 'accepted'; // For users accepting invites.
       }
       
-      // AUDIT LOGS subcollection
       match /audit_logs/{logId} {
-        // Only admins can read the audit logs.
         allow read: if isUserAdmin() && isUserInCompany(companyId);
-        // Logs are write-only from the backend (our service functions), so client writes are denied.
-        allow write: if false;
+        allow write: if false; // Write only from backend.
       }
     }
   }

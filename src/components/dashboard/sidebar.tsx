@@ -4,13 +4,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, UsersRound, CircleUser } from "lucide-react";
+import { LayoutDashboard, UsersRound, CircleUser, MailQuestion } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
 const navLinks = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, adminOnly: false },
   { href: "/dashboard/profile", label: "Profile", icon: CircleUser, adminOnly: false },
   { href: "/dashboard/users", label: "Users", icon: UsersRound, adminOnly: true },
+  { href: "/dashboard/enquiries", label: "Enquiries", icon: MailQuestion, adminOnly: true },
 ];
 
 export default function Sidebar() {

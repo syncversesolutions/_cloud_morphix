@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from "next/link";
@@ -18,12 +17,20 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { userProfile } = useAuth();
   const isAdmin = userProfile?.role === "Admin";
+  // A platform admin is an Admin of the "Cloud Morphix" company.
+  const isPlatformAdmin = isAdmin && userProfile?.companyName === "Cloud Morphix";
 
   return (
     <aside className="w-64 flex-shrink-0 border-r border-border/60 bg-background p-4">
       <nav className="flex flex-col gap-2">
         {navLinks.map((link) => {
+          // General check: hide all admin links if user is not an admin.
           if (link.adminOnly && !isAdmin) {
+            return null;
+          }
+          
+          // Stricter check for Enquiries: Must be a platform admin.
+          if (link.href === '/dashboard/enquiries' && !isPlatformAdmin) {
             return null;
           }
           
@@ -46,5 +53,3 @@ export default function Sidebar() {
     </aside>
   );
 }
-
-    

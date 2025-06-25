@@ -8,12 +8,6 @@ import { useAuth } from "@/hooks/use-auth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useState } from "react";
 
-const navLinks = [
-  { href: "#features", label: "Features" },
-  { href: "#pricing", label: "Pricing" },
-  { href: "#get-started", label: "Get Started" },
-];
-
 export default function LandingHeader() {
   const { user } = useAuth();
   const isMobile = useIsMobile();
@@ -23,19 +17,23 @@ export default function LandingHeader() {
     setSheetOpen(false);
   };
 
-  const NavContent = () => (
-    <>
-      {navLinks.map((link) => (
-        <Link
-          key={link.href}
-          href={link.href}
-          onClick={handleLinkClick}
-          className="text-muted-foreground transition-colors hover:text-foreground"
-        >
-          {link.label}
-        </Link>
-      ))}
-    </>
+  const AuthButtons = () => (
+     <>
+        {user ? (
+            <Button asChild>
+                <Link href="/dashboard" onClick={handleLinkClick}>Go to Dashboard</Link>
+            </Button>
+        ) : (
+            <div className="flex items-center gap-2 flex-col md:flex-row w-full">
+                <Button asChild variant="ghost" className="w-full md:w-auto">
+                    <Link href="/login" onClick={handleLinkClick}>Login</Link>
+                </Button>
+                <Button asChild className="w-full md:w-auto">
+                    <Link href="/register" onClick={handleLinkClick}>Book a Demo</Link>
+                </Button>
+            </div>
+        )}
+     </>
   );
 
   return (
@@ -43,7 +41,7 @@ export default function LandingHeader() {
       <div className="container flex h-16 items-center justify-between">
         <Link href="/" className="flex items-center gap-2">
           <Cloud className="h-6 w-6 text-primary" />
-          <span className="font-bold text-lg font-headline">Cloud Morphix</span>
+          <span className="font-bold text-lg font-headline">CloudMorphix</span>
         </Link>
 
         {isMobile ? (
@@ -55,52 +53,14 @@ export default function LandingHeader() {
               </Button>
             </SheetTrigger>
             <SheetContent side="right">
-              <nav className="flex h-full flex-col">
-                <div className="flex flex-col gap-6 mt-8">
-                  <NavContent />
+                <div className="mt-12 flex flex-col gap-4">
+                    <AuthButtons />
                 </div>
-                <div className="mt-auto flex flex-col gap-4 pb-8">
-                  {user ? (
-                    <Button asChild>
-                      <Link href="/dashboard" onClick={handleLinkClick}>
-                        Go to Dashboard
-                      </Link>
-                    </Button>
-                  ) : (
-                    <>
-                      <Button asChild variant="outline">
-                        <Link href="/login" onClick={handleLinkClick}>
-                          Login
-                        </Link>
-                      </Button>
-                      <Button asChild>
-                        <Link href="/register" onClick={handleLinkClick}>
-                          Register
-                        </Link>
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </nav>
             </SheetContent>
           </Sheet>
         ) : (
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
-            <NavContent />
-            {user ? (
-              <Button asChild>
-                <Link href="/dashboard">Dashboard</Link>
-              </Button>
-            ) : (
-              <div className="flex items-center gap-2">
-                <Button asChild variant="ghost">
-                  <Link href="/login">Login</Link>
-                </Button>
-                <Button asChild>
-                  <Link href="/register">Register</Link>
-                </Button>
-              </div>
-            )}
+          <nav className="hidden md:flex items-center gap-4 text-sm font-medium">
+            <AuthButtons />
           </nav>
         )}
       </div>

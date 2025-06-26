@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import DashboardEmbed from "@/components/dashboard/dashboard-embed";
@@ -26,11 +25,6 @@ export default function DashboardPage() {
   const dashboardUrl = userProfile.dashboardUrl;
 
   return (
-    <div className="container mx-auto p-4 sm:p-6 lg:p-8">
-        <h2 className="mb-4 text-3xl font-bold tracking-tight font-headline">{userProfile.companyName} Dashboard</h2>
-        <DashboardEmbed url={dashboardUrl} />
-    </div>
+      <DashboardEmbed url={dashboardUrl} />
   );
 }
-
-    

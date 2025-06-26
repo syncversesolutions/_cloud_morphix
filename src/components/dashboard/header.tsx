@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from "next/link";
@@ -48,7 +47,7 @@ export default function Header() {
         <div className="mr-4 flex items-center">
           <Cloud className="h-6 w-6 text-primary" />
           <span className="ml-2 text-lg font-bold font-headline">
-            {userProfile?.companyName || "Cloud Morphix"}
+            Cloud Morphix
           </span>
         </div>
         <div className="flex flex-1 items-center justify-end space-x-4">

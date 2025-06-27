@@ -1,118 +1,117 @@
+
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
+    
     // --- Helper Functions ---
-    // Checks if the requesting user belongs to the specified company.
-    function isUserInCompany(companyId) {
-      let lookupDoc = get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid));
-      return lookupDoc.exists && lookupDoc.data.companyId == companyId;
+    function isSignedIn() {
+      return request.auth != null;
     }
 
-    // Retrieves the permissions for the requesting user based on their role.
-    function getRolePermissions(companyId) {
-        let userProfile = get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid));
-        if (!userProfile.exists) {
-          return [];
-        }
-        let roleName = userProfile.data.role;
-        let roleDoc = get(/databases/$(database)/documents/companies/$(companyId)/roles/$(roleName));
-        if (!roleDoc.exists) {
-          return [];
-        }
-        return roleDoc.data.allowed_actions;
+    // Checks if the requesting user's UID exists in the user_company_lookup collection
+    // and if their assigned companyId matches the one in the path.
+    // This function should only be used for rules on existing documents, not during creation.
+    function isUserInCompany(companyId) {
+      let userLookupPath = /databases/$(database)/documents/user_company_lookup/$(request.auth.uid);
+      return isSignedIn() && exists(userLookupPath) && get(userLookupPath).data.companyId == companyId;
     }
     
-    function isPlatformAdmin() {
-        // Ensure the user has a lookup entry first.
-        let lookupDoc = get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid));
-        if (!lookupDoc.exists) {
-          return false;
-        }
-        let userCompanyId = lookupDoc.data.companyId;
-        
-        // Fetch company and user profile documents.
-        let companyDoc = get(/databases/$(database)/documents/companies/$(userCompanyId));
-        let userProfile = get(/databases/$(database)/documents/companies/$(userCompanyId)/users/$(request.auth.uid));
-
-        // Check for existence of all documents before accessing data.
-        return companyDoc.exists && userProfile.exists &&
-               companyDoc.data.company_name == 'Cloud Morphix' && 
-               userProfile.data.role == 'Admin';
+    // Retrieves the requesting user's data from the users subcollection.
+    function getUserData(companyId) {
+      let userDocPath = /databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid);
+      return get(userDocPath).data;
     }
 
-    // --- Company Rules ---
-    match /companies/{companyId} {
-      // Allow creation during registration. The user must be authenticated.
-      // Further checks are on the sub-collections created in the same batch.
-      allow create: if request.auth.uid != null;
+    // Checks if the user has a specific permission.
+    // The 'Admin' role has all permissions implicitly.
+    // For other roles, it checks the role document's 'allowed_actions' list.
+    function hasPermission(companyId, permission) {
+      if (!isUserInCompany(companyId)) {
+        return false;
+      }
+      let userData = getUserData(companyId);
+      let roleName = userData.role;
+      
+      if (roleName == 'Admin') {
+        return true;
+      }
+      
+      let roleDocPath = /databases/$(database)/documents/companies/$(companyId)/roles/$(roleName);
+      return exists(roleDocPath) && permission in get(roleDocPath).data.allowed_actions;
+    }
 
-      // Allow reads if the user is part of the company.
+
+    // --- Path-based Rules ---
+    match /companies/{companyId} {
+      // READ: Any authenticated user belonging to the company can read the company document.
       allow read: if isUserInCompany(companyId);
 
-      // Disallow client-side updates/deletes to the main company document.
+      // CREATE: A signed-in user can create a company document. This is the entry point for registration.
+      // Further checks on the subcollections ensure this is a valid registration operation.
+      allow create: if isSignedIn();
+
+      // Company document is immutable from the client-side after creation.
       allow update, delete: if false;
 
-      // --- User Rules ---
       match /users/{userId} {
-        // Allow creating a user profile IF it's the user's own profile AND it's for the initial 'Admin' user.
-        allow create: if request.auth.uid == userId && request.resource.data.role == 'Admin';
-
-        // Allow reads if the user is part of the company.
+        // READ: Any user in the company can read other user profiles within the same company.
         allow read: if isUserInCompany(companyId);
-
-        // Allow updates:
-        // 1. A user can update their own 'fullName'.
-        // 2. An admin can update another user's 'role'.
-        // 3. Any authenticated user in the company can update the dashboardUrl.
+        
+        // CREATE:
+        // Case 1 (Registration): A new user is creating their own user document. This is only allowed if
+        // their role is 'Admin', ensuring the first user of a company is always an admin.
+        // Case 2 (Invite): An existing user with 'manage_users' permission is creating a new user.
+        allow create: if (isSignedIn() && request.auth.uid == userId && request.resource.data.role == 'Admin') ||
+                         (hasPermission(companyId, 'manage_users'));
+                         
+        // UPDATE:
+        // Case 1: A user is updating their own profile. They are only allowed to change their 'fullName'.
+        // Case 2: An admin with 'manage_users' is changing another user's 'role'.
         allow update: if (request.auth.uid == userId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fullName'])) ||
-                       ('manage_users' in getRolePermissions(companyId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role'])) ||
-                       (isUserInCompany(companyId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['dashboardUrl']));
-
-        // Allow deletion if the user has 'manage_users' permission.
-        allow delete: if 'manage_users' in getRolePermissions(companyId);
+                         (hasPermission(companyId, 'manage_users') && request.auth.uid != userId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role']));
+                         
+        // DELETE: An admin can remove another user from the company.
+        allow delete: if hasPermission(companyId, 'manage_users') && request.auth.uid != userId;
       }
-
-      // --- Role Rules ---
-      match /roles/{roleId} {
-        // Allow creation of default roles during registration OR by an admin with 'manage_roles' permission.
-        allow create: if (roleId in ['Admin', 'Viewer', 'Analyst']) || ('manage_roles' in getRolePermissions(companyId));
-        
-        // Allow reads if the user is part of the company.
+      
+      match /roles/{roleName} {
+        // READ: Any user in the company can read the available roles.
         allow read: if isUserInCompany(companyId);
-        
-        // Disallow client-side updates/deletes.
-        allow update, delete: if false;
+
+        // CREATE:
+        // Case 1 (Registration): The default roles 'Admin', 'Viewer', 'Analyst' must be created.
+        // Case 2 (Admin Action): A user with 'manage_roles' permission is creating a new custom role.
+        allow create: if (isSignedIn() && roleName in ['Admin', 'Viewer', 'Analyst']) ||
+                         (hasPermission(companyId, 'manage_roles'));
+                          
+        // UPDATE/DELETE: An admin can manage roles, but cannot change the core 'Admin' role.
+        allow update, delete: if hasPermission(companyId, 'manage_roles') && roleName != 'Admin';
       }
 
-      // --- Audit Log Rules ---
       match /audit_logs/{logId} {
-        // Creation is handled by secure backend logic.
-        allow create: if isUserInCompany(companyId);
-        allow read: if isPlatformAdmin() || 'manage_users' in getRolePermissions(companyId);
-        allow update, delete: if false;
+          allow read: if hasPermission(companyId, 'manage_users'); // Or a more specific audit permission
+          // Logs are created by a trusted backend process (e.g., Cloud Functions), not the client.
+          allow write: if false; 
       }
     }
-
-    // --- User-Company Lookup Rules ---
+    
     match /user_company_lookup/{userId} {
-      // Allow user to create their own lookup doc.
-      allow create: if request.auth.uid == userId;
-      // Allow user to read their own lookup doc.
+      // READ: A user can only read their own lookup document.
       allow read: if request.auth.uid == userId;
-      // Disallow updates/deletes from client.
+
+      // CREATE: A user can only create their own lookup document. This happens on registration.
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      
+      // Lookup document is immutable from the client.
       allow update, delete: if false;
     }
     
-    // --- Contacts Rules ---
     match /contacts/{contactId} {
-      // Allow anyone to create a contact message.
-      allow create: if true;
-      // Only allow platform admins to read contact messages.
-      allow read, list: if isPlatformAdmin();
-      // Disallow updates/deletes from client.
-      allow update, delete: if false;
+        // Public contact form, anyone can create.
+        allow create: if true; 
+        // Read/write only from a trusted backend environment.
+        allow read, write, delete: if false; 
     }
   }
 }

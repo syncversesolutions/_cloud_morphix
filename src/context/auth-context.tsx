@@ -11,6 +11,7 @@ interface AuthContextType {
   user: User | null;
   userProfile: UserProfile | null;
   loading: boolean;
+  isPlatformAdmin: boolean;
   refreshUserProfile: () => Promise<void>;
 }
 
@@ -18,6 +19,7 @@ export const AuthContext = createContext<AuthContextType>({
   user: null,
   userProfile: null,
   loading: true,
+  isPlatformAdmin: false,
   refreshUserProfile: async () => {},
 });
 
@@ -25,18 +27,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
 
   const fetchProfile = useCallback(async (currentUser: User | null) => {
     if (currentUser) {
       try {
         const profile = await getUserProfile(currentUser.uid);
         setUserProfile(profile);
+        if (profile) {
+            const lowerCaseCompanyName = profile.companyName?.toLowerCase();
+            const isAdmin = profile.role === "Admin" && (lowerCaseCompanyName === "cloud morphix" || lowerCaseCompanyName === "loud morphix");
+            setIsPlatformAdmin(isAdmin);
+        } else {
+            setIsPlatformAdmin(false);
+        }
       } catch (error) {
         console.error("Failed to fetch user profile:", error);
         setUserProfile(null);
+        setIsPlatformAdmin(false);
       }
     } else {
       setUserProfile(null);
+      setIsPlatformAdmin(false);
     }
     // Set loading to false only after all async operations are done.
     setLoading(false);
@@ -59,7 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(false);
   };
 
-  const value = { user, userProfile, loading, refreshUserProfile };
+  const value = { user, userProfile, loading, isPlatformAdmin, refreshUserProfile };
 
   return (
     <AuthContext.Provider value={value}>
@@ -67,5 +79,3 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     </AuthContext.Provider>
   );
 }
-
-    

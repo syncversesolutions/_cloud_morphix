@@ -25,9 +25,8 @@ const settingsNavLinks = [
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { userProfile } = useAuth();
+  const { userProfile, isPlatformAdmin } = useAuth();
   
-  const isPlatformAdmin = userProfile?.role === "Admin" && userProfile?.companyName?.toLowerCase() === "cloud morphix";
   const userPermissions = userProfile?.allowed_actions || [];
 
   const isSettingsPageActive = settingsNavLinks.some(link => pathname.startsWith(link.href));

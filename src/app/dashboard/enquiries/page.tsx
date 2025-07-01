@@ -12,14 +12,10 @@ import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { AlertTriangle } from "lucide-react";
 
 export default function EnquiriesPage() {
-  const { userProfile, loading: authLoading } = useAuth();
+  const { isPlatformAdmin, loading: authLoading } = useAuth();
   const [enquiries, setEnquiries] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // A platform admin is an Admin of the "Cloud Morphix" company.
-  const lowerCaseCompanyName = userProfile?.companyName?.toLowerCase();
-  const isPlatformAdmin = userProfile?.role === "Admin" && (lowerCaseCompanyName === "cloud morphix" || lowerCaseCompanyName === "loud morphix");
 
   useEffect(() => {
     // Wait for authentication to resolve before doing anything.

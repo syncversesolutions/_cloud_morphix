@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import DashboardEmbed from "@/components/dashboard/dashboard-embed";
 import LoadingSpinner from "@/components/loading-spinner";
+import PlatformAdminDashboard from "@/components/dashboard/platform-admin-dashboard";
 
 export default function DashboardPage() {
-  const { user, userProfile, loading: authLoading } = useAuth();
+  const { user, userProfile, loading: authLoading, isPlatformAdmin } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -18,6 +19,10 @@ export default function DashboardPage() {
 
   if (authLoading || !userProfile) {
     return <LoadingSpinner />;
+  }
+  
+  if (isPlatformAdmin) {
+    return <PlatformAdminDashboard />;
   }
   
   const dashboardUrl = userProfile.dashboardUrl;

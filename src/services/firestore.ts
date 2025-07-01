@@ -8,7 +8,7 @@ import { z } from 'zod';
 export interface Role {
     id: string;
     role_name: string;
-    allowed_actions: string[];
+    allowed_actions: { [key: string]: boolean }; // Changed to map for rules
 }
 
 // The user's profile data, now with permissions included.
@@ -31,9 +31,8 @@ export interface Company {
     industry: string;
     subscription_plan: 'Trial' | 'Basic' | 'Enterprise';
     is_active: boolean;
-    created_at: any;
+    created_at: Timestamp;
     plan_expiry_date?: any;
-    // The 'roles' array is now deprecated in favor of the 'roles' sub-collection.
 }
 
 // This is defined here to be the single source of truth for user creation validation.
@@ -123,12 +122,12 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
 
     // Fetch the permissions for the user's role
     if (userRoleName) {
-        // Roles are now stored with the role name as the document ID.
         const roleRef = doc(db, "companies", companyId, "roles", userRoleName);
         const roleSnap = await getDoc(roleRef);
         if (roleSnap.exists()) {
             const roleData = roleSnap.data();
-            allowed_actions = roleData.allowed_actions || [];
+            // Convert permissions map back to an array for easier use on the client.
+            allowed_actions = Object.keys(roleData.allowed_actions || {});
         }
     }
 
@@ -137,7 +136,7 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
         fullName: userData.fullName,
         email: userData.email,
         role: userRoleName,
-        allowed_actions: allowed_actions, // Add permissions to the profile object
+        allowed_actions: allowed_actions,
         dashboardUrl: userData.dashboardUrl,
         isActive: userData.isActive,
         createdAt: userData.createdAt,
@@ -169,7 +168,6 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
 
     const batch = writeBatch(db);
 
-    // 1. Create the Company Document
     batch.set(companyRef, {
         company_name: companyData.company_name,
         industry: companyData.industry,
@@ -179,22 +177,25 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
         plan_expiry_date: null,
     });
     
-    // 2. Create default roles in the 'roles' sub-collection, using the role name as the ID.
     const rolesRef = collection(db, "companies", companyRef.id, "roles");
+    const allPermissionsMap = availablePermissions.reduce((acc, p) => {
+        acc[p.id] = true;
+        return acc;
+    }, {} as {[key: string]: boolean});
+    
     batch.set(doc(rolesRef, "Admin"), {
         role_name: "Admin",
-        allowed_actions: availablePermissions.map(p => p.id), // All permissions
+        allowed_actions: allPermissionsMap,
     });
      batch.set(doc(rolesRef, "Viewer"), {
         role_name: "Viewer",
-        allowed_actions: ["view_dashboard"],
+        allowed_actions: { "view_dashboard": true },
     });
      batch.set(doc(rolesRef, "Analyst"), {
         role_name: "Analyst",
-        allowed_actions: ["view_dashboard"],
+        allowed_actions: { "view_dashboard": true },
     });
 
-    // 3. Create the User Document in the sub-collection
     batch.set(userRef, {
         fullName: adminData.fullName,
         email: adminData.email,
@@ -204,7 +205,6 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
         createdAt: serverTimestamp(),
     });
 
-    // 4. Create the lookup document
     batch.set(lookupRef, { companyId: companyRef.id });
     
     await batch.commit();
@@ -216,18 +216,15 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
     );
 }
 
-// Creates a new user in Auth and Firestore without logging out the current admin.
 export async function createUserInCompany(companyId: string, data: AddUserInput, actor: Actor): Promise<void> {
     const tempAppName = `temp-user-creation-${Date.now()}`;
     const tempApp = initializeApp(firebaseConfig, tempAppName);
     const tempAuth = getAuth(tempApp);
 
     try {
-        // Step 1: Create user in Firebase Authentication
         const userCredential = await createUserWithEmailAndPassword(tempAuth, data.email, data.password);
         const newUserUid = userCredential.user.uid;
 
-        // Step 2: Create user profile in Firestore
         const userRef = doc(db, "companies", companyId, "users", newUserUid);
         const lookupRef = doc(db, "user_company_lookup", newUserUid);
         const batch = writeBatch(db);
@@ -246,9 +243,8 @@ export async function createUserInCompany(companyId: string, data: AddUserInput,
         await createAuditLog(companyId, actor, `Created a new user account for ${data.fullName} (${data.email}) with role "${data.role}".`);
     } catch(error) {
         console.error("Error creating user:", error);
-        throw error; // Re-throw to be handled by the UI
+        throw error;
     } finally {
-        // Step 3: Clean up the temporary Firebase app instance
         await deleteApp(tempApp);
     }
 }
@@ -259,7 +255,6 @@ export async function getCompanyUsers(companyId: string): Promise<UserProfile[]>
     const rolesRef = collection(db, "companies", companyId, "roles");
     const companyRef = doc(db, "companies", companyId);
 
-    // Fetch all needed data in parallel
     const [usersSnapshot, rolesSnapshot, companySnap] = await Promise.all([
         getDocs(usersRef),
         getDocs(rolesRef),
@@ -273,11 +268,10 @@ export async function getCompanyUsers(companyId: string): Promise<UserProfile[]>
     const companyData = companySnap.data() as Omit<Company, 'id'>;
     const companyName = companyData.company_name;
 
-    // Create a map of role names to their permissions for easy lookup
     const rolesMap = new Map<string, string[]>();
     rolesSnapshot.forEach(doc => {
         const roleData = doc.data();
-        rolesMap.set(roleData.role_name, roleData.allowed_actions || []);
+        rolesMap.set(roleData.role_name, Object.keys(roleData.allowed_actions || {}));
     });
 
     const userProfiles: UserProfile[] = usersSnapshot.docs.map(doc => {
@@ -302,7 +296,6 @@ export async function getCompanyUsers(companyId: string): Promise<UserProfile[]>
     return userProfiles;
 }
 
-// Fetches roles from the sub-collection.
 export async function getCompanyRoles(companyId: string): Promise<Role[]> {
     const rolesRef = collection(db, "companies", companyId, "roles");
     const rolesSnap = await getDocs(query(rolesRef, orderBy("role_name")));
@@ -314,12 +307,17 @@ export async function getCompanyRoles(companyId: string): Promise<Role[]> {
     return roles;
 }
 
-// Adds a new role document to the sub-collection, using the role name as the ID.
 export async function addRole(companyId: string, roleName: string, permissions: string[], actor: Actor): Promise<void> {
     const roleRef = doc(db, "companies", companyId, "roles", roleName);
+    
+    const permissionsMap = permissions.reduce((acc, perm) => {
+        acc[perm] = true;
+        return acc;
+    }, {} as { [key: string]: boolean });
+
     await setDoc(roleRef, {
         role_name: roleName,
-        allowed_actions: permissions
+        allowed_actions: permissionsMap
     });
     await createAuditLog(companyId, actor, `Created new role: "${roleName}".`);
 }
@@ -345,10 +343,6 @@ export async function updateUserRole(uid: string, newRole: string, actor: Actor,
 }
 
 export async function removeUserFromCompany(user: UserProfile, actor: Actor): Promise<void> {
-    // This is a placeholder for a secure way to delete a Firebase Auth user.
-    // The client-side SDK cannot delete other users. This requires the Admin SDK.
-    // For now, we will just remove the user from the company in Firestore.
-    // A future implementation would call a Cloud Function to delete the Auth user.
     console.warn(`User ${user.email} was removed from the company in Firestore, but their Auth account still exists.`);
 
     const userRef = doc(db, "companies", user.companyId, "users", user.id);
@@ -374,4 +368,16 @@ export async function getContacts(): Promise<Contact[]> {
 
     return contacts;
 }
-    
+
+export async function getAllCompanies(): Promise<Company[]> {
+    const companiesCollection = collection(db, "companies");
+    const q = query(companiesCollection, orderBy("created_at", "desc"));
+    const querySnapshot = await getDocs(q);
+
+    const companies: Company[] = [];
+    querySnapshot.forEach((doc) => {
+        companies.push({ id: doc.id, ...doc.data() } as Company);
+    });
+
+    return companies;
+}

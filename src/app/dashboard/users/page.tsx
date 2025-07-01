@@ -183,10 +183,12 @@ export default function UserManagementPage() {
               Manage Roles
             </Button>
           )}
-          <Button onClick={() => setIsAddUserDialogOpen(true)}>
-            <UserPlus className="mr-2" />
-            Add User
-          </Button>
+          {canManageUsers && (
+            <Button onClick={() => setIsAddUserDialogOpen(true)}>
+              <UserPlus className="mr-2" />
+              Add User
+            </Button>
+          )}
         </div>
       </div>
 

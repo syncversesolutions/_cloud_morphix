@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useAuth, type UserProfile } from "@/hooks/use-auth";
-import { getCompanyUsers, getCompanyRoles, addRole, createUserInCompany, removeUserFromCompany, type Role, type AddUserInput } from "@/services/firestore";
+import { getCompanyUsers, getCompanyRoles, addRole, createUserInCompany, removeUserFromCompany, updateUserRole, type Role, type AddUserInput } from "@/services/firestore";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";

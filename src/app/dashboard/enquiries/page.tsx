@@ -18,7 +18,7 @@ export default function EnquiriesPage() {
   const [error, setError] = useState<string | null>(null);
 
   // A platform admin is an Admin of the "Cloud Morphix" company.
-  const isPlatformAdmin = userProfile?.role === "Admin" && userProfile?.companyName === "Cloud Morphix";
+  const isPlatformAdmin = userProfile?.role === "Admin" && userProfile?.companyName?.toLowerCase() === "cloud morphix";
 
   useEffect(() => {
     // Wait for authentication to resolve before doing anything.

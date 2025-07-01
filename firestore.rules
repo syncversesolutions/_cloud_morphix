@@ -1,85 +1,108 @@
+
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ---- HELPER FUNCTIONS ----
-
+    // Helper Functions
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isNewUserRegistration() {
-      return isSignedIn() && !exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid));
-    }
-
-    function getUserCompanyId() {
-      return get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId;
-    }
-
-    function isUserInCompany(companyId) {
-      return getUserCompanyId() == companyId;
-    }
-
-    function getUserData(userId) {
-      let companyId = getUserCompanyId();
-      return get(/databases/$(database)/documents/companies/$(companyId)/users/$(userId)).data;
+    function getUserCompanyId(userId) {
+      return get(/databases/$(database)/documents/user_company_lookup/$(userId)).data.companyId;
     }
     
-    function hasPermission(permission) {
-        let userRole = getUserData(request.auth.uid).role;
-        let companyId = getUserCompanyId();
-        let rolePermissions = get(/databases/$(database)/documents/companies/$(companyId)/roles/$(userRole)).data.allowed_actions;
-        return permission in rolePermissions;
+    function getCompanyDoc(companyId) {
+        return get(/databases/$(database)/documents/companies/$(companyId)).data;
+    }
+
+    function getUserDoc(companyId, userId) {
+        return get(/databases/$(database)/documents/companies/$(companyId)/users/$(userId)).data;
+    }
+
+    function userHasPermission(companyId, userId, permission) {
+      let roleName = getUserDoc(companyId, userId).role;
+      let permissions = get(/databases/$(database)/documents/companies/$(companyId)/roles/$(roleName)).data.allowed_actions;
+      return permissions != null && permissions[permission] == true;
     }
 
     function isPlatformAdmin() {
-        let companyId = getUserCompanyId();
-        if (!exists(/databases/$(database)/documents/companies/$(companyId))) {
-          return false;
-        }
-        let companyData = get(/databases/$(database)/documents/companies/$(companyId)).data;
-        let userData = getUserData(request.auth.uid);
-        return userData.role == 'Admin' && (companyData.company_name.lower() == 'cloud morphix' || companyData.company_name.lower() == 'loud morphix');
+      return exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid))
+        && getUserDoc(getUserCompanyId(request.auth.uid), request.auth.uid).role == 'Admin'
+        && (getCompanyDoc(getUserCompanyId(request.auth.uid)).company_name == 'Cloud Morphix'
+            || getCompanyDoc(getUserCompanyId(request.auth.uid)).company_name == 'loud morphix');
     }
 
-    // ---- COLLECTION RULES ----
-
-    match /companies/{companyId} {
-      allow get: if isSignedIn() && isUserInCompany(companyId);
-      allow list, get: if isPlatformAdmin();
-      allow create: if isNewUserRegistration();
-      allow update: if false; // Add specific update rules if needed
-    }
-    
-    match /companies/{companyId}/users/{userId} {
-      allow get: if isSignedIn() && isUserInCompany(companyId) && (request.auth.uid == userId || hasPermission('manage_users'));
-      allow list: if isSignedIn() && isUserInCompany(companyId) && hasPermission('manage_users');
-      allow create: if (isNewUserRegistration() && request.auth.uid == userId) || (isSignedIn() && isUserInCompany(companyId) && hasPermission('manage_users'));
-      allow update: if (isSignedIn() && request.auth.uid == userId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fullName'])) ||
-                       (isSignedIn() && isUserInCompany(companyId) && hasPermission('manage_users') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role']));
-      allow delete: if isSignedIn() && isUserInCompany(companyId) && hasPermission('manage_users') && request.auth.uid != userId;
-    }
-    
-    match /companies/{companyId}/roles/{roleId} {
-      allow read: if isSignedIn() && isUserInCompany(companyId);
-      allow write: if isSignedIn() && isUserInCompany(companyId) && hasPermission('manage_roles');
-    }
-    
-    match /companies/{companyId}/audit_logs/{logId} {
-      allow read: if isSignedIn() && isUserInCompany(companyId);
-      allow create: if isSignedIn() && isUserInCompany(companyId);
+    function isNewUserRegistration() {
+        return isSignedIn() && !exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid));
     }
 
+    // Rules for user company lookup
     match /user_company_lookup/{userId} {
       allow create: if isNewUserRegistration() && request.auth.uid == userId;
-      allow read, update: if false;
-      allow delete: if isSignedIn() && hasPermission('manage_users');
+      allow read: if isSignedIn() && (request.auth.uid == userId || isPlatformAdmin());
+      allow update, delete: if false;
     }
-    
+
+    // Rules for contact form submissions
     match /contacts/{contactId} {
-      allow create: if isSignedIn();
-      allow read: if isPlatformAdmin();
+        allow read: if isSignedIn() && isPlatformAdmin();
+        allow create: if true;
+        allow update, delete: if false;
+    }
+
+    // Rules for companies and their subcollections
+    match /companies/{companyId} {
+      allow create: if isNewUserRegistration();
+      allow read: if isSignedIn() && (isPlatformAdmin() || getUserCompanyId(request.auth.uid) == companyId);
+      allow update: if isSignedIn() && isPlatformAdmin();
+      allow delete: if false;
+
+      // Rules for users subcollection
+      match /users/{userId} {
+        allow create: if (isNewUserRegistration() && request.auth.uid == userId) ||
+                         (isSignedIn() &&
+                          getUserCompanyId(request.auth.uid) == companyId &&
+                          userHasPermission(companyId, request.auth.uid, 'manage_users'));
+
+        allow read: if isSignedIn() && (isPlatformAdmin() || getUserCompanyId(request.auth.uid) == companyId);
+
+        allow update: if isSignedIn() && getUserCompanyId(request.auth.uid) == companyId &&
+                       (
+                         (request.auth.uid == userId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fullName'])) ||
+                         (userHasPermission(companyId, request.auth.uid, 'manage_users') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role']))
+                       );
+
+        allow delete: if isSignedIn() &&
+                        getUserCompanyId(request.auth.uid) == companyId &&
+                        userHasPermission(companyId, request.auth.uid, 'manage_users') &&
+                        request.auth.uid != userId;
+      }
+
+      // Rules for roles subcollection
+      match /roles/{roleName} {
+        allow read: if isSignedIn() && getUserCompanyId(request.auth.uid) == companyId;
+        
+        allow create: if (isNewUserRegistration() && roleName in ['Admin', 'Viewer', 'Analyst']) ||
+                         (isSignedIn() &&
+                          getUserCompanyId(request.auth.uid) == companyId &&
+                          userHasPermission(companyId, request.auth.uid, 'manage_roles'));
+
+        allow update: if isSignedIn() &&
+                      getUserCompanyId(request.auth.uid) == companyId &&
+                      userHasPermission(companyId, request.auth.uid, 'manage_roles');
+                              
+        allow delete: if false;
+      }
+
+      // Rules for audit logs subcollection
+      match /audit_logs/{logId} {
+          allow write: if false;
+          allow read: if isSignedIn() &&
+                        getUserCompanyId(request.auth.uid) == companyId &&
+                        userHasPermission(companyId, request.auth.uid, 'manage_roles');
+      }
     }
   }
 }

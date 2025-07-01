@@ -168,10 +168,15 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
 
     const batch = writeBatch(db);
 
+    const lowerCaseCompanyName = companyData.company_name.toLowerCase();
+    const subscription_plan = (lowerCaseCompanyName === 'cloud morphix' || lowerCaseCompanyName === 'loud morphix')
+                                ? 'Enterprise'
+                                : 'Trial';
+
     batch.set(companyRef, {
         company_name: companyData.company_name,
         industry: companyData.industry,
-        subscription_plan: "Trial",
+        subscription_plan: subscription_plan,
         is_active: true,
         created_at: serverTimestamp(),
         plan_expiry_date: null,
@@ -257,7 +262,7 @@ export async function getCompanyUsers(companyId: string): Promise<UserProfile[]>
 
     const [usersSnapshot, rolesSnapshot, companySnap] = await Promise.all([
         getDocs(usersRef),
-        getDocs(rolesRef),
+        getDocs(rolesSnapshot),
         getDoc(companyRef)
     ]);
 

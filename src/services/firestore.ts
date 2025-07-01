@@ -265,7 +265,7 @@ export async function getCompanyUsers(companyId: string): Promise<UserProfile[]>
 
     const [usersSnapshot, rolesSnapshot, companySnap] = await Promise.all([
         getDocs(usersRef),
-        getDocs(rolesSnapshot),
+        getDocs(rolesRef),
         getDoc(companyRef)
     ]);
 

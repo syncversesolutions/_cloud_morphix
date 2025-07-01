@@ -34,13 +34,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const profile = await getUserProfile(currentUser.uid);
         setUserProfile(profile);
-        if (profile) {
-            const lowerCaseCompanyName = profile.companyName?.toLowerCase();
-            const isAdmin = profile.role === "Admin" && (lowerCaseCompanyName === "cloud morphix" || lowerCaseCompanyName === "loud morphix");
-            setIsPlatformAdmin(isAdmin);
-        } else {
-            setIsPlatformAdmin(false);
-        }
+        // The source of truth is now the profile itself.
+        setIsPlatformAdmin(profile?.isPlatformAdmin ?? false);
       } catch (error) {
         console.error("Failed to fetch user profile:", error);
         setUserProfile(null);

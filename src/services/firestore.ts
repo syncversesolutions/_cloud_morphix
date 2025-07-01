@@ -23,6 +23,7 @@ export interface UserProfile {
     createdAt: any;
     companyId: string;
     companyName: string;
+    isPlatformAdmin?: boolean;
 }
 
 export interface Company {
@@ -142,6 +143,7 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
         createdAt: userData.createdAt,
         companyId: companyId,
         companyName: companyData.company_name,
+        isPlatformAdmin: userData.isPlatformAdmin || false,
     };
 }
 
@@ -169,9 +171,8 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
     const batch = writeBatch(db);
 
     const lowerCaseCompanyName = companyData.company_name.toLowerCase();
-    const subscription_plan = (lowerCaseCompanyName === 'cloud morphix' || lowerCaseCompanyName === 'loud morphix')
-                                ? 'Enterprise'
-                                : 'Trial';
+    const isPlatformOwner = (lowerCaseCompanyName === 'cloud morphix' || lowerCaseCompanyName === 'loud morphix');
+    const subscription_plan = isPlatformOwner ? 'Enterprise' : 'Trial';
 
     batch.set(companyRef, {
         company_name: companyData.company_name,
@@ -208,6 +209,7 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
         dashboardUrl: null,
         isActive: true,
         createdAt: serverTimestamp(),
+        isPlatformAdmin: isPlatformOwner,
     });
 
     batch.set(lookupRef, { companyId: companyRef.id });
@@ -241,6 +243,7 @@ export async function createUserInCompany(companyId: string, data: AddUserInput,
             dashboardUrl: null,
             isActive: true,
             createdAt: serverTimestamp(),
+            isPlatformAdmin: false, // Regular users are never platform admins
         });
         batch.set(lookupRef, { companyId: companyId });
         await batch.commit();
@@ -295,6 +298,7 @@ export async function getCompanyUsers(companyId: string): Promise<UserProfile[]>
             createdAt: userData.createdAt,
             companyId: companyId,
             companyName: companyName,
+            isPlatformAdmin: userData.isPlatformAdmin || false,
         };
     });
     

@@ -1,120 +1,80 @@
-
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // --- Helper Functions ---
-    
-    // Is the request authenticated?
-    function isAuth() {
+
+    // Helper functions
+    function isUserAuthenticated() {
       return request.auth != null;
     }
 
-    // Is the requester the user identified by userId?
-    function isSelf(userId) {
-      return isAuth() && request.auth.uid == userId;
-    }
-    
-    // Get a user's company ID from the central lookup table.
-    function getUserCompanyId(userId) {
-      return get(/databases/$(database)/documents/user_company_lookup/$(userId)).data.companyId;
+    function isCompanyAdmin(companyId) {
+      return request.auth != null &&
+             exists(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role == 'Admin';
     }
 
-    // Check if a user is a member of a specific company.
-    function isMemberOf(companyId) {
-      return isAuth() 
-        && exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid))
-        && getUserCompanyId(request.auth.uid) == companyId;
-    }
-
-    // Check if a user has a specific permission.
-    function hasPermission(permission, companyId) {
-      if (!isMemberOf(companyId)) {
-        return false;
-      }
-      let userDocPath = /databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid);
-      if (!exists(userDocPath)) {
-        return false;
-      }
-      let roleName = get(userDocPath).data.role;
-      let roleDocPath = /databases/$(database)/documents/companies/$(companyId)/roles/$(roleName);
-      if (!exists(roleDocPath)) {
-        return false;
-      }
-      let rolePermissions = get(roleDocPath).data.allowed_actions;
-      return rolePermissions[permission] == true;
+    function isUserInCompany(companyId) {
+      return request.auth != null &&
+             exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId;
     }
     
-    // Check if a user is a platform-level administrator.
     function isPlatformAdmin() {
-      if (!isAuth() || !exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid))) {
-        return false;
-      }
-      let companyId = getUserCompanyId(request.auth.uid);
-      return get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.isPlatformAdmin == true;
+      return request.auth != null &&
+             exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)) &&
+             // Use a direct get() path instead of a nested get()
+             get(/databases/$(database)/documents/companies/$(get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId)/users/$(request.auth.uid)).data.isPlatformAdmin == true;
     }
 
+    // --- Collection Rules ---
 
-    // --- Firestore Rules ---
-
-    // RULE: Contacts can be created by anyone.
-    // They can only be read by platform admins.
+    // Contacts: Allow public creation for demo requests. Deny all reads.
     match /contacts/{contactId} {
-      allow create: if true;
-      allow read, list: if isPlatformAdmin();
-      allow update, delete: if false;
+      allow create: request.resource.data.name is string &&
+                    request.resource.data.email is string &&
+                    request.resource.data.companyName is string;
+      allow read, update, delete: false;
     }
 
-    // RULE: The lookup record links a user to a company.
+    // User Lookup: Maps a user's UID to their company ID.
     match /user_company_lookup/{userId} {
-      // Allow creation if you are creating your own lookup during registration,
-      // OR if you are an admin creating a lookup for a new user in your company.
-      allow create: if isSelf(userId) || hasPermission('manage_users', request.resource.data.companyId);
-      allow read: if isSelf(userId) || isPlatformAdmin();
-      allow delete: if hasPermission('manage_users', getUserCompanyId(userId));
-      allow update: if false;
+      allow get: request.auth.uid == userId;
+      // Allow creation if it's your own user or you are an admin of the target company.
+      allow create: isUserAuthenticated() &&
+                    (request.auth.uid == userId || isCompanyAdmin(request.resource.data.companyId));
+      allow list, update, delete: false;
     }
 
-    // RULE: Top-level company documents.
+    // Companies: The main data container for each tenant.
     match /companies/{companyId} {
-      // Creation is allowed only by a new user as part of registration.
-      allow create: if isAuth() && !exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid));
-      // Reading is allowed if you are a member of the company or a platform admin.
-      allow read: if isMemberOf(companyId) || isPlatformAdmin();
-      // Only platform admins can get a list of all companies.
-      allow list: if isPlatformAdmin();
-      allow update, delete: if false;
-    }
-    
-    // RULE: User profiles within a company.
-    match /companies/{companyId}/users/{userId} {
-      allow read: if isSelf(userId) || hasPermission('manage_users', companyId);
-      allow list: if hasPermission('manage_users', companyId);
-      // Allow creation for a new user registering OR by an admin.
-      allow create: if isSelf(userId) || hasPermission('manage_users', companyId);
-      // Allow a user to update only their own name, or an admin to update more.
-      allow update: if (isSelf(userId) && request.resource.data.keys().hasOnly(['fullName']))
-                      || hasPermission('manage_users', companyId);
-      // Allow an admin to delete users other than themselves.
-      allow delete: if hasPermission('manage_users', companyId) && !isSelf(userId);
-    }
-    
-    // RULE: Roles within a company.
-    match /companies/{companyId}/roles/{roleId} {
-      // Anyone in the company can read the roles.
-      allow read, list: if isMemberOf(companyId);
-      // Allow creation during registration OR by a role manager.
-      allow create: if (isAuth() && !exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)))
-                      || hasPermission('manage_roles', companyId);
-      allow update: if hasPermission('manage_roles', companyId);
-      // Can delete roles, but not the main 'Admin' role.
-      allow delete: if hasPermission('manage_roles', companyId) && roleId != 'Admin';
-    }
+      allow get: isUserInCompany(companyId) || isPlatformAdmin();
+      allow list: isPlatformAdmin();
+      allow create: isUserAuthenticated();
+      allow update: isCompanyAdmin(companyId);
+      allow delete: false;
 
-    // RULE: Audit logs within a company.
-    match /companies/{companyId}/audit_logs/{logId} {
-        allow create: if hasPermission('manage_users', companyId) || hasPermission('manage_roles', companyId);
-        allow read, list, update, delete: if false;
+      // Users Subcollection
+      match /users/{userId} {
+        allow get: request.auth.uid == userId || isCompanyAdmin(companyId);
+        allow list: isCompanyAdmin(companyId);
+        allow create: isUserAuthenticated() && (request.auth.uid == userId || isCompanyAdmin(companyId));
+        allow update: request.auth.uid == userId || isCompanyAdmin(companyId);
+        allow delete: isCompanyAdmin(companyId);
+      }
+
+      // Roles Subcollection
+      match /roles/{roleId} {
+        allow get, list: isUserInCompany(companyId);
+        allow create, update, delete: isCompanyAdmin(companyId);
+      }
+
+      // Audit Logs Subcollection
+      match /audit_logs/{logId} {
+        allow get, list: isCompanyAdmin(companyId);
+        allow create: isCompanyAdmin(companyId);
+        allow update, delete: false;
+      }
     }
   }
 }

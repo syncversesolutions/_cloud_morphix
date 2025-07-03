@@ -55,7 +55,7 @@ export default function AddUserDialog({ isOpen, onOpenChange, roles, availableRe
       email: '',
       role: '',
       password: '',
-      assignedReports: [],
+      dashboardUrl: [],
     },
   });
 
@@ -151,7 +151,7 @@ export default function AddUserDialog({ isOpen, onOpenChange, roles, availableRe
             />
             <FormField
               control={form.control}
-              name="assignedReports"
+              name="dashboardUrl"
               render={({ field }) => (
                 <FormItem className="flex flex-col">
                   <FormLabel>Reports</FormLabel>
@@ -216,9 +216,9 @@ export default function AddUserDialog({ isOpen, onOpenChange, roles, availableRe
                                     onClick={() => {
                                         if (newReportUrl.startsWith('http')) {
                                             onAddNewReport(newReportUrl);
-                                            const currentAssigned = form.getValues("assignedReports") || [];
+                                            const currentAssigned = form.getValues("dashboardUrl") || [];
                                             if (!currentAssigned.includes(newReportUrl)) {
-                                                form.setValue("assignedReports", [...currentAssigned, newReportUrl]);
+                                                form.setValue("dashboardUrl", [...currentAssigned, newReportUrl]);
                                             }
                                             setNewReportUrl("");
                                         }

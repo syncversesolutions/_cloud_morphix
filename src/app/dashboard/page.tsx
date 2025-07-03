@@ -22,7 +22,8 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (userProfile) {
-      const firstReport = userProfile.assignedReports?.[0] || userProfile.dashboardUrl;
+      // The first report in the list is the default view.
+      const firstReport = userProfile.assignedReports?.[0];
       setCurrentReport(firstReport || null);
     }
   }, [userProfile]);
@@ -46,12 +47,7 @@ export default function DashboardPage() {
     }
   };
 
-  // Combine dashboardUrl and assignedReports for the dropdown, ensuring no duplicates and removing falsy values
-  const viewableReports = [...new Set([
-      userProfile.dashboardUrl,
-      ...(userProfile.assignedReports || [])
-  ].filter(Boolean) as string[])];
-  
+  const viewableReports = userProfile.assignedReports || [];
   const currentReportName = getReportName(currentReport);
 
   return (

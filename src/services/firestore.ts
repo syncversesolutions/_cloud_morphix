@@ -18,7 +18,6 @@ export interface UserProfile {
     email: string;
     role: string; // The name of the role, e.g., "Admin"
     allowed_actions: string[]; // Permissions inherited from the role
-    dashboardUrl?: string;
     assignedReports?: string[];
     isActive: boolean;
     createdAt: any;
@@ -148,7 +147,6 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
         email: userData.email,
         role: userRoleName,
         allowed_actions: allowed_actions,
-        dashboardUrl: userData.dashboardUrl,
         assignedReports: userData.assignedReports || [],
         isActive: userData.isActive,
         createdAt: userData.createdAt,
@@ -156,11 +154,6 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
         companyName: companyData.company_name,
         isPlatformAdmin: userData.isPlatformAdmin || isLegacyPlatformAdmin || false,
     };
-}
-
-export async function getDashboardUrl(uid: string): Promise<string | null> {
-    const userProfile = await getUserProfile(uid);
-    return userProfile?.dashboardUrl || null;
 }
 
 interface CompanyData {
@@ -217,7 +210,6 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
         fullName: adminData.fullName,
         email: adminData.email,
         role: "Admin",
-        dashboardUrl: null,
         assignedReports: [],
         isActive: true,
         createdAt: serverTimestamp(),
@@ -252,7 +244,6 @@ export async function createUserInCompany(companyId: string, data: AddUserInput,
             fullName: data.fullName,
             email: data.email,
             role: data.role,
-            dashboardUrl: data.assignedReports?.[0] || null,
             assignedReports: data.assignedReports || [],
             isActive: true,
             createdAt: serverTimestamp(),
@@ -306,7 +297,6 @@ export async function getCompanyUsers(companyId: string): Promise<UserProfile[]>
             email: userData.email,
             role: userRole,
             allowed_actions: allowed_actions,
-            dashboardUrl: userData.dashboardUrl,
             assignedReports: userData.assignedReports || [],
             isActive: userData.isActive,
             createdAt: userData.createdAt,

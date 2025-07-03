@@ -1,80 +1,148 @@
+
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
-    function isUserAuthenticated() {
-      return request.auth != null;
+    // Default deny all access to prevent unauthorized reads/writes
+    match /{document=**} {
+      allow read, write: if false;
     }
 
-    function isCompanyAdmin(companyId) {
-      return request.auth != null &&
-             exists(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)) &&
-             get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role == 'Admin';
-    }
-
-    function isUserInCompany(companyId) {
-      return request.auth != null &&
-             exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)) &&
-             get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId;
-    }
-    
-    function isPlatformAdmin() {
-      return request.auth != null &&
-             exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)) &&
-             // Use a direct get() path instead of a nested get()
-             get(/databases/$(database)/documents/companies/$(get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId)/users/$(request.auth.uid)).data.isPlatformAdmin == true;
-    }
-
-    // --- Collection Rules ---
-
-    // Contacts: Allow public creation for demo requests. Deny all reads.
+    // PUBLIC ACCESS: Allow anyone to create a contact form submission.
+    // Platform admins are the only ones who can read this data.
     match /contacts/{contactId} {
-      allow create: request.resource.data.name is string &&
-                    request.resource.data.email is string &&
-                    request.resource.data.companyName is string;
-      allow read, update, delete: false;
+      allow create: if request.resource.data.name is string &&
+                       request.resource.data.email is string &&
+                       request.resource.data.companyName is string;
+      allow read: if request.auth != null &&
+                     exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)) &&
+                     get(/databases/$(database)/documents/companies/$(get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId)/users/$(request.auth.uid)).data.isPlatformAdmin == true;
     }
 
-    // User Lookup: Maps a user's UID to their company ID.
+    // USER LOOKUP: Maps a user's UID to their company ID.
     match /user_company_lookup/{userId} {
-      allow get: request.auth.uid == userId;
-      // Allow creation if it's your own user or you are an admin of the target company.
-      allow create: isUserAuthenticated() &&
-                    (request.auth.uid == userId || isCompanyAdmin(request.resource.data.companyId));
-      allow list, update, delete: false;
+      // A user can read their own lookup document.
+      allow get: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow creation for:
+      // 1. A new user creating their own record during registration.
+      // 2. An existing admin with 'manage_users' permission creating a record for a new user.
+      allow create: if (request.auth != null && request.auth.uid == userId) ||
+                       (
+                         request.auth != null &&
+                         exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)) &&
+                         'manage_users' in get(/databases/$(database)/documents/companies/$(request.resource.data.companyId)/users/$(request.auth.uid)).data.allowed_actions
+                       );
     }
 
-    // Companies: The main data container for each tenant.
+    // COMPANIES: Main collection for all company data and subcollections.
     match /companies/{companyId} {
-      allow get: isUserInCompany(companyId) || isPlatformAdmin();
-      allow list: isPlatformAdmin();
-      allow create: isUserAuthenticated();
-      allow update: isCompanyAdmin(companyId);
-      allow delete: false;
 
-      // Users Subcollection
+      // A user can read their own company's document, or a platform admin can read any.
+      allow get: if (
+                      request.auth != null &&
+                      exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)) &&
+                      get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId
+                   ) || (
+                      request.auth != null &&
+                      exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)) &&
+                      get(/databases/$(database)/documents/companies/$(get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId)/users/$(request.auth.uid)).data.isPlatformAdmin == true
+                   );
+                   
+      // Only platform admins can list all companies.
+      allow list: if request.auth != null &&
+                     exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)) &&
+                     get(/databases/$(database)/documents/companies/$(get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId)/users/$(request.auth.uid)).data.isPlatformAdmin == true;
+
+      // Any authenticated user can create a company (this is part of the registration flow).
+      allow create: if request.auth != null;
+
+      // Only company admins with 'manage_roles' permission can update company details.
+      allow update: if request.auth != null &&
+                       exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)) &&
+                       get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId &&
+                       'manage_roles' in get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.allowed_actions;
+
+
+      // USERS Subcollection
       match /users/{userId} {
-        allow get: request.auth.uid == userId || isCompanyAdmin(companyId);
-        allow list: isCompanyAdmin(companyId);
-        allow create: isUserAuthenticated() && (request.auth.uid == userId || isCompanyAdmin(companyId));
-        allow update: request.auth.uid == userId || isCompanyAdmin(companyId);
-        allow delete: isCompanyAdmin(companyId);
+        // Allow reads for the user themselves or an admin with 'manage_users' permission.
+        allow get: if (request.auth != null && request.auth.uid == userId) ||
+                      (
+                        request.auth != null &&
+                        exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)) &&
+                        get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId &&
+                        'manage_users' in get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.allowed_actions
+                      );
+                      
+        // Allow list for admins with 'manage_users' permission.
+        allow list: if request.auth != null &&
+                     exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)) &&
+                     get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId &&
+                     'manage_users' in get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.allowed_actions;
+
+        // Allow user creation for the user themselves (registration) or by an admin.
+        allow create: if (request.auth != null && request.auth.uid == userId) ||
+                         (
+                           request.auth != null &&
+                           exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)) &&
+                           get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId &&
+                           'manage_users' in get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.allowed_actions
+                         );
+                         
+        // Allow updates by the user themselves or by an admin.
+        allow update: if (request.auth != null && request.auth.uid == userId) ||
+                         (
+                           request.auth != null &&
+                           exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)) &&
+                           get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId &&
+                           'manage_users' in get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.allowed_actions
+                         );
+                         
+        // Allow deletion only by an admin.
+        allow delete: if request.auth != null &&
+                       exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)) &&
+                       get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId &&
+                       'manage_users' in get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.allowed_actions;
       }
 
-      // Roles Subcollection
+      // ROLES Subcollection
       match /roles/{roleId} {
-        allow get, list: isUserInCompany(companyId);
-        allow create, update, delete: isCompanyAdmin(companyId);
+        // Any member of the company can read the roles.
+        allow get, list: if request.auth != null &&
+                           exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)) &&
+                           get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId;
+                           
+        // Allow creating roles if:
+        // 1. The user is an admin with 'manage_roles' permission.
+        // 2. It's one of the default roles being created during company registration.
+        allow create: if (
+                          request.auth != null &&
+                          request.resource.data.role_name in ['Admin', 'Viewer', 'Analyst']
+                        ) || (
+                          request.auth != null &&
+                          exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)) &&
+                          get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId &&
+                          'manage_roles' in get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.allowed_actions
+                        );
+
+        // Only admins with 'manage_roles' can update or delete.
+        allow update, delete: if request.auth != null &&
+                                exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)) &&
+                                get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId &&
+                                'manage_roles' in get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.allowed_actions;
       }
 
-      // Audit Logs Subcollection
+      // AUDIT LOGS Subcollection
       match /audit_logs/{logId} {
-        allow get, list: isCompanyAdmin(companyId);
-        allow create: isCompanyAdmin(companyId);
-        allow update, delete: false;
+        // Admins can read and create audit logs.
+        allow get, list, create: if request.auth != null &&
+                                    exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)) &&
+                                    get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId &&
+                                    ('manage_users' in get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.allowed_actions || 'manage_roles' in get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.allowed_actions);
       }
     }
   }
 }
+    

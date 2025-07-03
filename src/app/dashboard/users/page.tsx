@@ -53,7 +53,7 @@ export default function UserManagementPage() {
         if (u.dashboardUrl) allReportUrls.add(u.dashboardUrl);
         if (u.assignedReports) u.assignedReports.forEach(report => allReportUrls.add(report));
       });
-      setAvailableReports(Array.from(allReportUrls));
+      setAvailableReports(Array.from(allReportUrls).sort());
 
     } catch (error: any) {
       console.error("Failed to fetch user management data:", error);
@@ -79,6 +79,16 @@ export default function UserManagementPage() {
       if (!user || !userProfile) return null;
       return { id: user.uid, name: userProfile.fullName, email: userProfile.email };
   }
+  
+  const handleAddNewReport = (newReportUrl: string) => {
+    if (newReportUrl && !availableReports.includes(newReportUrl)) {
+      setAvailableReports(prev => [...prev, newReportUrl].sort());
+      toast({
+        title: "Report Added",
+        description: "The new report URL is now available for selection."
+      });
+    }
+  };
 
   const handleAddRole = async (roleName: string, permissions: string[]) => {
     const actor = getActor();
@@ -283,6 +293,7 @@ export default function UserManagementPage() {
         roles={roles.filter(r => r.role_name !== 'Admin')} // Cannot assign Admin directly
         availableReports={availableReports}
         onAddUser={handleAddUser}
+        onAddNewReport={handleAddNewReport}
        />
        
       {selectedUser && (

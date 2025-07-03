@@ -23,6 +23,7 @@ import type { Role } from '@/services/firestore';
 import { addUserFormSchema, type AddUserInput } from '@/services/firestore';
 import { CheckCircle2, XCircle, Check, PlusCircle, X } from "lucide-react";
 import { cn } from '@/lib/utils';
+import { Separator } from '@/components/ui/separator';
 
 interface AddUserDialogProps {
   isOpen: boolean;
@@ -30,11 +31,13 @@ interface AddUserDialogProps {
   roles: Role[];
   availableReports: string[];
   onAddUser: (values: AddUserInput) => Promise<boolean>;
+  onAddNewReport: (url: string) => void;
 }
 
-export default function AddUserDialog({ isOpen, onOpenChange, roles, availableReports, onAddUser }: AddUserDialogProps) {
+export default function AddUserDialog({ isOpen, onOpenChange, roles, availableReports, onAddUser, onAddNewReport }: AddUserDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [password, setPassword] = useState("");
+  const [newReportUrl, setNewReportUrl] = useState("");
 
   const passwordChecks = [
     { label: "8-16 characters long", satisfied: password.length >= 8 && password.length <= 16 },
@@ -79,7 +82,7 @@ export default function AddUserDialog({ isOpen, onOpenChange, roles, availableRe
     try {
       const parts = url.split('/');
       const lastPart = parts[parts.length - 1] || '';
-      return lastPart.split('?')[0] || 'Unnamed Report';
+      return lastPart.split('?')[0].replace(/-/g, ' ').replace(/_/g, ' ') || 'Unnamed Report';
     } catch {
       return 'Unnamed Report';
     }
@@ -157,6 +160,9 @@ export default function AddUserDialog({ isOpen, onOpenChange, roles, availableRe
                       <Button variant="outline" className="w-full justify-start">
                         <PlusCircle className="mr-2 h-4 w-4" />
                         Assign Reports
+                        {field.value && field.value.length > 0 && (
+                            <Badge variant="secondary" className="ml-auto">{field.value.length} selected</Badge>
+                        )}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-[450px] p-0" align="start">
@@ -186,22 +192,53 @@ export default function AddUserDialog({ isOpen, onOpenChange, roles, availableRe
                                   >
                                     <Check className="h-4 w-4" />
                                   </div>
-                                  <span>{getReportName(report)}</span>
+                                  <span className="capitalize">{getReportName(report)}</span>
                                 </CommandItem>
                               );
                             })}
                           </CommandGroup>
                         </CommandList>
+                        <Separator />
+                        <div className="p-2 space-y-2">
+                            <p className="text-xs text-muted-foreground">
+                                Can't find a report? Add the URL here.
+                            </p>
+                            <div className="flex items-center gap-2">
+                                <Input
+                                    placeholder="https://lookerstudio.google.com/..."
+                                    value={newReportUrl}
+                                    onChange={(e) => setNewReportUrl(e.target.value)}
+                                />
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => {
+                                        if (newReportUrl.startsWith('http')) {
+                                            onAddNewReport(newReportUrl);
+                                            const currentAssigned = form.getValues("assignedReports") || [];
+                                            if (!currentAssigned.includes(newReportUrl)) {
+                                                form.setValue("assignedReports", [...currentAssigned, newReportUrl]);
+                                            }
+                                            setNewReportUrl("");
+                                        }
+                                    }}
+                                    disabled={!newReportUrl.startsWith('http')}
+                                >
+                                    Add
+                                </Button>
+                            </div>
+                        </div>
                       </Command>
                     </PopoverContent>
                   </Popover>
                   <FormDescription>
                     Select the reports that this user will have access to.
                   </FormDescription>
-                  <div className="flex flex-wrap gap-2 pt-2">
+                  <div className="flex flex-wrap gap-1 pt-2">
                     {field.value?.map((report) => (
                        <Badge variant="secondary" key={report} className="flex items-center gap-1">
-                         {getReportName(report)}
+                         <span className="capitalize">{getReportName(report)}</span>
                          <button
                             type="button"
                             onClick={() => field.onChange(field.value?.filter((r) => r !== report))}

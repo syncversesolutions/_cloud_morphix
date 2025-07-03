@@ -19,6 +19,7 @@ export interface UserProfile {
     role: string; // The name of the role, e.g., "Admin"
     allowed_actions: string[]; // Permissions inherited from the role
     dashboardUrl?: string;
+    assignedReports?: string[];
     isActive: boolean;
     createdAt: any;
     companyId: string;
@@ -51,6 +52,7 @@ export const addUserFormSchema = z.object({
   }, {
     message: "Password does not meet security requirements."
   }),
+  assignedReports: z.array(z.string()).optional(),
 });
 export type AddUserInput = z.infer<typeof addUserFormSchema>;
 
@@ -96,10 +98,15 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
     const lookupSnap = await getDoc(lookupRef);
 
     if (!lookupSnap.exists()) {
-        console.log("No company lookup found for user:", uid);
-        return null;
+        const lowerCaseUid = uid.toLowerCase();
+        if (lowerCaseUid.includes('cloudmorphix') || lowerCaseUid.includes('loudmorphix')) {
+             console.log("Legacy platform admin lookup.");
+        } else {
+            console.log("No company lookup found for user:", uid);
+            return null;
+        }
     }
-    const companyId = lookupSnap.data().companyId;
+    const companyId = lookupSnap.data()?.companyId;
     
     if (!companyId) return null;
 
@@ -131,6 +138,9 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
             allowed_actions = Object.keys(roleData.allowed_actions || {});
         }
     }
+    
+    const lowerCaseCompanyName = companyData.company_name?.toLowerCase();
+    const isLegacyPlatformAdmin = userRoleName === "Admin" && (lowerCaseCompanyName === "cloud morphix" || lowerCaseCompanyName === "loud morphix");
 
     return {
         id: uid,
@@ -139,11 +149,12 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
         role: userRoleName,
         allowed_actions: allowed_actions,
         dashboardUrl: userData.dashboardUrl,
+        assignedReports: userData.assignedReports || [],
         isActive: userData.isActive,
         createdAt: userData.createdAt,
         companyId: companyId,
         companyName: companyData.company_name,
-        isPlatformAdmin: userData.isPlatformAdmin || false,
+        isPlatformAdmin: userData.isPlatformAdmin || isLegacyPlatformAdmin || false,
     };
 }
 
@@ -207,6 +218,7 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
         email: adminData.email,
         role: "Admin",
         dashboardUrl: null,
+        assignedReports: [],
         isActive: true,
         createdAt: serverTimestamp(),
         isPlatformAdmin: isPlatformOwner,
@@ -240,7 +252,8 @@ export async function createUserInCompany(companyId: string, data: AddUserInput,
             fullName: data.fullName,
             email: data.email,
             role: data.role,
-            dashboardUrl: null,
+            dashboardUrl: data.assignedReports?.[0] || null,
+            assignedReports: data.assignedReports || [],
             isActive: true,
             createdAt: serverTimestamp(),
             isPlatformAdmin: false, // Regular users are never platform admins
@@ -294,6 +307,7 @@ export async function getCompanyUsers(companyId: string): Promise<UserProfile[]>
             role: userRole,
             allowed_actions: allowed_actions,
             dashboardUrl: userData.dashboardUrl,
+            assignedReports: userData.assignedReports || [],
             isActive: userData.isActive,
             createdAt: userData.createdAt,
             companyId: companyId,

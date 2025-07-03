@@ -13,21 +13,26 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Badge } from '@/components/ui/badge';
 import type { Role } from '@/services/firestore';
 import { addUserFormSchema, type AddUserInput } from '@/services/firestore';
-import { CheckCircle2, XCircle } from "lucide-react";
+import { CheckCircle2, XCircle, Check, PlusCircle, X } from "lucide-react";
+import { cn } from '@/lib/utils';
 
 interface AddUserDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   roles: Role[];
+  availableReports: string[];
   onAddUser: (values: AddUserInput) => Promise<boolean>;
 }
 
-export default function AddUserDialog({ isOpen, onOpenChange, roles, onAddUser }: AddUserDialogProps) {
+export default function AddUserDialog({ isOpen, onOpenChange, roles, availableReports, onAddUser }: AddUserDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [password, setPassword] = useState("");
 
@@ -47,6 +52,7 @@ export default function AddUserDialog({ isOpen, onOpenChange, roles, onAddUser }
       email: '',
       role: '',
       password: '',
+      assignedReports: [],
     },
   });
 
@@ -69,9 +75,19 @@ export default function AddUserDialog({ isOpen, onOpenChange, roles, onAddUser }
     onOpenChange(open);
   }
 
+  const getReportName = (url: string) => {
+    try {
+      const parts = url.split('/');
+      const lastPart = parts[parts.length - 1] || '';
+      return lastPart.split('?')[0] || 'Unnamed Report';
+    } catch {
+      return 'Unnamed Report';
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Add a New User</DialogTitle>
           <DialogDescription>
@@ -126,6 +142,76 @@ export default function AddUserDialog({ isOpen, onOpenChange, roles, onAddUser }
                       ))}
                     </SelectContent>
                   </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="assignedReports"
+              render={({ field }) => (
+                <FormItem className="flex flex-col">
+                  <FormLabel>Reports</FormLabel>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-full justify-start">
+                        <PlusCircle className="mr-2 h-4 w-4" />
+                        Assign Reports
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[450px] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search reports..." />
+                        <CommandList>
+                          <CommandEmpty>No reports found.</CommandEmpty>
+                          <CommandGroup>
+                            {availableReports.map((report) => {
+                              const isSelected = field.value?.includes(report);
+                              return (
+                                <CommandItem
+                                  key={report}
+                                  onSelect={() => {
+                                    if (isSelected) {
+                                      field.onChange(field.value?.filter((r) => r !== report));
+                                    } else {
+                                      field.onChange([...(field.value || []), report]);
+                                    }
+                                  }}
+                                >
+                                  <div
+                                    className={cn(
+                                      "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
+                                      isSelected ? "bg-primary text-primary-foreground" : "opacity-50 [&_svg]:invisible"
+                                    )}
+                                  >
+                                    <Check className="h-4 w-4" />
+                                  </div>
+                                  <span>{getReportName(report)}</span>
+                                </CommandItem>
+                              );
+                            })}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  <FormDescription>
+                    Select the reports that this user will have access to.
+                  </FormDescription>
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {field.value?.map((report) => (
+                       <Badge variant="secondary" key={report} className="flex items-center gap-1">
+                         {getReportName(report)}
+                         <button
+                            type="button"
+                            onClick={() => field.onChange(field.value?.filter((r) => r !== report))}
+                            className="rounded-full hover:bg-muted-foreground/20 p-0.5"
+                          >
+                           <X className="h-3 w-3" />
+                         </button>
+                       </Badge>
+                    ))}
+                  </div>
                   <FormMessage />
                 </FormItem>
               )}

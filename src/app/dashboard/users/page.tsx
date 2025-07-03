@@ -23,6 +23,7 @@ export default function UserManagementPage() {
   const { toast } = useToast();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
+  const [availableReports, setAvailableReports] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [isRolesDialogOpen, setIsRolesDialogOpen] = useState(false);
   const [isAddUserDialogOpen, setIsAddUserDialogOpen] = useState(false);
@@ -46,6 +47,13 @@ export default function UserManagementPage() {
       
       setUsers(fetchedUsers);
       setRoles(fetchedRoles);
+
+      const allReportUrls = new Set<string>();
+      fetchedUsers.forEach(u => {
+        if (u.dashboardUrl) allReportUrls.add(u.dashboardUrl);
+        if (u.assignedReports) u.assignedReports.forEach(report => allReportUrls.add(report));
+      });
+      setAvailableReports(Array.from(allReportUrls));
 
     } catch (error: any) {
       console.error("Failed to fetch user management data:", error);
@@ -273,6 +281,7 @@ export default function UserManagementPage() {
         isOpen={isAddUserDialogOpen}
         onOpenChange={setIsAddUserDialogOpen}
         roles={roles.filter(r => r.role_name !== 'Admin')} // Cannot assign Admin directly
+        availableReports={availableReports}
         onAddUser={handleAddUser}
        />
        

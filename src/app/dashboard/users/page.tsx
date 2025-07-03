@@ -50,8 +50,12 @@ export default function UserManagementPage() {
 
       const allReportUrls = new Set<string>();
       fetchedUsers.forEach(u => {
-        if (u.assignedReports) {
-          u.assignedReports.forEach(report => allReportUrls.add(report));
+        if (u.dashboardUrl) {
+          if (Array.isArray(u.dashboardUrl)) {
+              u.dashboardUrl.forEach(report => allReportUrls.add(report));
+          } else if (typeof u.dashboardUrl === 'string') {
+              allReportUrls.add(u.dashboardUrl);
+          }
         }
       });
       setAvailableReports(Array.from(allReportUrls).sort());

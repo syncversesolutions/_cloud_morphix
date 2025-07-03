@@ -22,8 +22,8 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (userProfile) {
-      // The first report in the list is the default view.
-      const firstReport = userProfile.assignedReports?.[0];
+      const urls = userProfile.dashboardUrl;
+      const firstReport = Array.isArray(urls) ? urls[0] : urls;
       setCurrentReport(firstReport || null);
     }
   }, [userProfile]);
@@ -47,7 +47,7 @@ export default function DashboardPage() {
     }
   };
 
-  const viewableReports = userProfile.assignedReports || [];
+  const viewableReports = Array.isArray(userProfile.dashboardUrl) ? userProfile.dashboardUrl : (userProfile.dashboardUrl ? [userProfile.dashboardUrl] : []);
   const currentReportName = getReportName(currentReport);
 
   return (

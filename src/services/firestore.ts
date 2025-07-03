@@ -18,7 +18,7 @@ export interface UserProfile {
     email: string;
     role: string; // The name of the role, e.g., "Admin"
     allowed_actions: string[]; // Permissions inherited from the role
-    assignedReports?: string[];
+    dashboardUrl?: string | string[];
     isActive: boolean;
     createdAt: any;
     companyId: string;
@@ -147,7 +147,7 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
         email: userData.email,
         role: userRoleName,
         allowed_actions: allowed_actions,
-        assignedReports: userData.assignedReports || [],
+        dashboardUrl: userData.dashboardUrl,
         isActive: userData.isActive,
         createdAt: userData.createdAt,
         companyId: companyId,
@@ -210,7 +210,7 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
         fullName: adminData.fullName,
         email: adminData.email,
         role: "Admin",
-        assignedReports: [],
+        dashboardUrl: [],
         isActive: true,
         createdAt: serverTimestamp(),
         isPlatformAdmin: isPlatformOwner,
@@ -244,7 +244,7 @@ export async function createUserInCompany(companyId: string, data: AddUserInput,
             fullName: data.fullName,
             email: data.email,
             role: data.role,
-            assignedReports: data.assignedReports || [],
+            dashboardUrl: data.assignedReports || [],
             isActive: true,
             createdAt: serverTimestamp(),
             isPlatformAdmin: false, // Regular users are never platform admins
@@ -297,7 +297,7 @@ export async function getCompanyUsers(companyId: string): Promise<UserProfile[]>
             email: userData.email,
             role: userRole,
             allowed_actions: allowed_actions,
-            assignedReports: userData.assignedReports || [],
+            dashboardUrl: userData.dashboardUrl,
             isActive: userData.isActive,
             createdAt: userData.createdAt,
             companyId: companyId,

@@ -51,7 +51,7 @@ export const addUserFormSchema = z.object({
   }, {
     message: "Password does not meet security requirements."
   }),
-  assignedReports: z.array(z.string()).optional(),
+  dashboardUrl: z.array(z.string()).optional(),
 });
 export type AddUserInput = z.infer<typeof addUserFormSchema>;
 
@@ -97,13 +97,8 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
     const lookupSnap = await getDoc(lookupRef);
 
     if (!lookupSnap.exists()) {
-        const lowerCaseUid = uid.toLowerCase();
-        if (lowerCaseUid.includes('cloudmorphix') || lowerCaseUid.includes('loudmorphix')) {
-             console.log("Legacy platform admin lookup.");
-        } else {
-            console.log("No company lookup found for user:", uid);
-            return null;
-        }
+        console.log("No company lookup found for user:", uid);
+        return null;
     }
     const companyId = lookupSnap.data()?.companyId;
     
@@ -138,9 +133,6 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
         }
     }
     
-    const lowerCaseCompanyName = companyData.company_name?.toLowerCase();
-    const isLegacyPlatformAdmin = userRoleName === "Admin" && (lowerCaseCompanyName === "cloud morphix" || lowerCaseCompanyName === "loud morphix");
-
     return {
         id: uid,
         fullName: userData.fullName,
@@ -152,7 +144,7 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
         createdAt: userData.createdAt,
         companyId: companyId,
         companyName: companyData.company_name,
-        isPlatformAdmin: userData.isPlatformAdmin || isLegacyPlatformAdmin || false,
+        isPlatformAdmin: userData.isPlatformAdmin || false,
     };
 }
 
@@ -216,7 +208,7 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
         isPlatformAdmin: isPlatformOwner,
     });
 
-    batch.set(lookupRef, { companyId: companyRef.id });
+    batch.set(lookupRef, { companyId: companyRef.id, isPlatformAdmin: isPlatformOwner });
     
     await batch.commit();
 
@@ -244,12 +236,12 @@ export async function createUserInCompany(companyId: string, data: AddUserInput,
             fullName: data.fullName,
             email: data.email,
             role: data.role,
-            dashboardUrl: data.assignedReports || [],
+            dashboardUrl: data.dashboardUrl || [],
             isActive: true,
             createdAt: serverTimestamp(),
             isPlatformAdmin: false, // Regular users are never platform admins
         });
-        batch.set(lookupRef, { companyId: companyId });
+        batch.set(lookupRef, { companyId: companyId, isPlatformAdmin: false });
         await batch.commit();
         
         await createAuditLog(companyId, actor, `Created a new user account for ${data.fullName} (${data.email}) with role "${data.role}".`);

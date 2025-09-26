@@ -1,10 +1,9 @@
-
 "use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, UsersRound, CircleUser, MailQuestion, Settings } from "lucide-react";
+import { LayoutDashboard, UsersRound, CircleUser, MailQuestion, Settings, Building2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import {
   Accordion,
@@ -19,14 +18,19 @@ const mainNavLinks = [
 ];
 
 const settingsNavLinks = [
-    { href: "/dashboard/profile", label: "Profile", icon: CircleUser, requiredPermission: null },
-    { href: "/dashboard/users", label: "Users", icon: UsersRound, requiredPermission: "manage_users" },
+  { href: "/dashboard/profile", label: "Profile", icon: CircleUser, requiredPermission: null },
+  { href: "/dashboard/users", label: "Users", icon: UsersRound, requiredPermission: "manage_users" },
+
+  // NEW: Create Company link right under Users
+  { href: "/dashboard/create_company", label: "Create Company", icon: Building2, requiredPermission: "manage_users" },
+
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
   const { userProfile, isPlatformAdmin } = useAuth();
-  
+  console.log(userProfile);
+
   const userPermissions = userProfile?.allowed_actions || [];
 
   const isSettingsPageActive = settingsNavLinks.some(link => pathname.startsWith(link.href));
@@ -38,6 +42,7 @@ export default function Sidebar() {
       }
       return true; // Profile page has no required permission
   });
+
 
 
   return (
@@ -81,7 +86,7 @@ export default function Sidebar() {
                     </AccordionTrigger>
                     <AccordionContent className="pl-4 pt-1">
                         <div className="flex flex-col gap-1">
-                        {settingsNavLinks.map((link) => {
+                        {settingsNavLinks.map((link , index) => {
                             // Check for specific permission requirement
                             if (link.requiredPermission && !userPermissions.includes(link.requiredPermission)) {
                                 return null;
@@ -91,7 +96,7 @@ export default function Sidebar() {
                             
                             return (
                                 <Link
-                                key={link.href}
+                                key={index}
                                 href={link.href}
                                 className={cn(
                                     "flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary",

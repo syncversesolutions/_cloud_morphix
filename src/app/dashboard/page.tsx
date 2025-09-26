@@ -20,6 +20,8 @@ export default function DashboardPage() {
     }
   }, [user, authLoading, router]);
 
+
+
   useEffect(() => {
     if (userProfile) {
       const urls = userProfile.dashboardUrl;

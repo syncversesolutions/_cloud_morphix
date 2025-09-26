@@ -1,4 +1,3 @@
-
 import { doc, getDoc, setDoc, serverTimestamp, collection, writeBatch, query, where, getDocs, addDoc, updateDoc, deleteDoc, arrayUnion, orderBy, Timestamp } from "firebase/firestore";
 import { db, firebaseConfig } from "@/lib/firebase";
 import { initializeApp, deleteApp } from 'firebase/app';
@@ -19,6 +18,7 @@ export interface UserProfile {
     role: string; // The name of the role, e.g., "Admin"
     allowed_actions: string[]; // Permissions inherited from the role
     dashboardUrl?: string | string[];
+    domoUrl?: string;  // Added domoUrl field here
     isActive: boolean;
     createdAt: any;
     companyId: string;
@@ -30,6 +30,7 @@ export interface Company {
     id: string;
     company_name: string;
     industry: string;
+    domo_url?: string;  // Added domo_url field here
     subscription_plan: 'Trial' | 'Basic' | 'Enterprise';
     is_active: boolean;
     created_at: Timestamp;
@@ -54,7 +55,6 @@ export const addUserFormSchema = z.object({
   dashboardUrl: z.array(z.string()).optional(),
 });
 export type AddUserInput = z.infer<typeof addUserFormSchema>;
-
 
 export interface Contact {
   id: string;
@@ -128,7 +128,6 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
         const roleSnap = await getDoc(roleRef);
         if (roleSnap.exists()) {
             const roleData = roleSnap.data();
-            // Convert permissions map back to an array for easier use on the client.
             allowed_actions = Object.keys(roleData.allowed_actions || {});
         }
     }
@@ -140,6 +139,7 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
         role: userRoleName,
         allowed_actions: allowed_actions,
         dashboardUrl: userData.dashboardUrl,
+        domoUrl: userData.domoUrl,  // Include domoUrl here
         isActive: userData.isActive,
         createdAt: userData.createdAt,
         companyId: companyId,
@@ -151,6 +151,7 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
 interface CompanyData {
     company_name: string;
     industry: string;
+    domoUrl?: string;  // New optional field
 }
 
 interface AdminData {
@@ -161,18 +162,20 @@ interface AdminData {
 
 export async function createCompanyAndAdmin({ companyData, adminData }: { companyData: CompanyData, adminData: AdminData }): Promise<void> {
     const companyRef = doc(collection(db, "companies"));
+    console.log("Company Ref ID:", companyRef.id);
     const userRef = doc(db, "companies", companyRef.id, "users", adminData.uid);
     const lookupRef = doc(db, "user_company_lookup", adminData.uid);
 
     const batch = writeBatch(db);
 
     const lowerCaseCompanyName = companyData.company_name.toLowerCase();
-    const isPlatformOwner = (lowerCaseCompanyName === 'cloud morphix' || lowerCaseCompanyName === 'loud morphix');
+    const isPlatformOwner = (lowerCaseCompanyName === 'cloud morphix' || lowerCaseCompanyName === 'cloud morphix');
     const subscription_plan = isPlatformOwner ? 'Enterprise' : 'Trial';
 
     batch.set(companyRef, {
         company_name: companyData.company_name,
         industry: companyData.industry,
+        domo_url: companyData.domoUrl || null,  // Add this field here
         subscription_plan: subscription_plan,
         is_active: true,
         created_at: serverTimestamp(),
@@ -252,7 +255,6 @@ export async function createUserInCompany(companyId: string, data: AddUserInput,
         await deleteApp(tempApp);
     }
 }
-
 
 export async function getCompanyUsers(companyId: string): Promise<UserProfile[]> {
     const usersRef = collection(db, "companies", companyId, "users");

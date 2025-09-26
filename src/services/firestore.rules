@@ -26,8 +26,9 @@ service cloud.firestore {
 
     match /companies/{companyId} {
       // Allow a signed-in user to create a company, but only if they don't already belong to one.
-      allow create: if isSignedIn() && !exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid));
-      
+      //allow create: if isSignedIn() && !exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid));
+      allow create: if isAuthenticated() && isPlatformAdmin();
+
       // Allow members of a company to read the company document.
       allow read: if isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId;
       
@@ -37,6 +38,7 @@ service cloud.firestore {
       // Disallow deleting companies from the client.
       allow delete: if false;
 
+    }
       // --- Sub-Collections ---
 
       match /users/{userId} {
@@ -73,4 +75,4 @@ service cloud.firestore {
       }
     }
   }
-}
+

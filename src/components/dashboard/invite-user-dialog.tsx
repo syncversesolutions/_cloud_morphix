@@ -149,6 +149,111 @@ export default function AddUserDialog({ isOpen, onOpenChange, roles, availableRe
                 </FormItem>
               )}
             />
+            {/* <FormField
+              control={form.control}
+              name="dashboardUrl"
+              render={({ field }) => (
+                <FormItem className="flex flex-col">
+                  <FormLabel>Reports</FormLabel>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-full justify-start">
+                        <PlusCircle className="mr-2 h-4 w-4" />
+                        Assign Reports
+                        {field.value && field.value.length > 0 && (
+                            <Badge variant="secondary" className="ml-auto">{field.value.length} selected</Badge>
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[450px] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search reports..." />
+                        <CommandList>
+                          <CommandEmpty>No reports found.</CommandEmpty>
+                          <CommandGroup>
+                            {availableReports.map((report) => {
+                              const isSelected = field.value?.includes(report);
+                              return (
+                                <CommandItem
+                                  key={report}
+                                  onSelect={() => {
+                                    if (isSelected) {
+                                      field.onChange(field.value?.filter((r) => r !== report));
+                                    } else {
+                                      field.onChange([...(field.value || []), report]);
+                                    }
+                                  }}
+                                >
+                                  <div
+                                    className={cn(
+                                      "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
+                                      isSelected ? "bg-primary text-primary-foreground" : "opacity-50 [&_svg]:invisible"
+                                    )}
+                                  >
+                                    <Check className="h-4 w-4" />
+                                  </div>
+                                  <span className="capitalize">{getReportName(report)}</span>
+                                </CommandItem>
+                              );
+                            })}
+                          </CommandGroup>
+                        </CommandList>
+                        <Separator />
+                        <div className="p-2 space-y-2">
+                            <p className="text-xs text-muted-foreground">
+                                Can't find a report? Add the URL here.
+                            </p>
+                            <div className="flex items-center gap-2">
+                                <Input
+                                    placeholder="https://lookerstudio.google.com/..."
+                                    value={newReportUrl}
+                                    onChange={(e) => setNewReportUrl(e.target.value)}
+                                />
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => {
+                                        if (newReportUrl.startsWith('http')) {
+                                            onAddNewReport(newReportUrl);
+                                            const currentAssigned = form.getValues("dashboardUrl") || [];
+                                            if (!currentAssigned.includes(newReportUrl)) {
+                                                form.setValue("dashboardUrl", [...currentAssigned, newReportUrl]);
+                                            }
+                                            setNewReportUrl("");
+                                        }
+                                    }}
+                                    disabled={!newReportUrl.startsWith('http')}
+                                >
+                                    Add
+                                </Button>
+                            </div>
+                        </div>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  <FormDescription>
+                    Select the reports that this user will have access to.
+                  </FormDescription>
+                  <div className="flex flex-wrap gap-1 pt-2">
+                    {field.value?.map((report) => (
+                       <Badge variant="secondary" key={report} className="flex items-center gap-1">
+                         <span className="capitalize">{getReportName(report)}</span>
+                         <button
+                            type="button"
+                            onClick={() => field.onChange(field.value?.filter((r) => r !== report))}
+                            className="rounded-full hover:bg-muted-foreground/20 p-0.5"
+                          >
+                           <X className="h-3 w-3" />
+                         </button>
+                       </Badge>
+                    ))}
+                  </div>
+                  <FormMessage />
+                </FormItem>
+              )}
+            /> */}
+
             <FormField
               control={form.control}
               name="dashboardUrl"
@@ -253,6 +358,7 @@ export default function AddUserDialog({ isOpen, onOpenChange, roles, availableRe
                 </FormItem>
               )}
             />
+
              <FormField
               control={form.control}
               name="password"

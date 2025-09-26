@@ -63,14 +63,14 @@ service cloud.firestore {
       allow list, update, delete: if false;
     }
 
-    // 3. COMPANIES & ALL SUBCOLLECTIONS
+    //3. COMPANIES & ALL SUBCOLLECTIONS
     match /companies/{companyId} {
       // Allow reading company details if you are an existing user in that company, or a platform admin.
       allow get: if (isAuthenticated() && isExistingUserInCompany(request.auth.uid, companyId)) || isPlatformAdmin();
       // Allow listing all companies ONLY for platform admins.
       allow list: if isPlatformAdmin();
       // Allow creating a company document only if authenticated (this is the first step of registration).
-      allow create: if isAuthenticated();
+      allow create: if isAuthenticated() && isPlatformAdmin();  // yaha pr change
       // No updates or deletes from the client for now.
       allow update, delete: if false;
 

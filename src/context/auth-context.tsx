@@ -33,6 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (currentUser) {
       try {
         const profile = await getUserProfile(currentUser.uid);
+        console.log("Fetched profile:", profile);
         setUserProfile(profile);
         // The source of truth is now the profile itself.
         setIsPlatformAdmin(profile?.isPlatformAdmin ?? false);

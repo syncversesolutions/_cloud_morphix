@@ -20,11 +20,14 @@ const mainNavLinks = [
 const settingsNavLinks = [
     { href: "/dashboard/profile", label: "Profile", icon: CircleUser, requiredPermission: null },
     { href: "/dashboard/users", label: "Users", icon: UsersRound, requiredPermission: "manage_users" },
+    { href: "/dashboard/create_company", label: "Create_Company", icon: CircleUser, requiredPermission: "manage_users" },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
   const { userProfile } = useAuth();
+
+  console.log(userProfile);
   
   const lowerCaseCompanyName = userProfile?.companyName?.toLowerCase();
   const isPlatformAdmin = userProfile?.role === "Admin" && (lowerCaseCompanyName === "cloud morphix" || lowerCaseCompanyName === "loud morphix");

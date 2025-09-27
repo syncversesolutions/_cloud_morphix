@@ -24,9 +24,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (userProfile) {
-      const urls = userProfile.dashboardUrl;
-      const firstReport = Array.isArray(urls) ? urls[0] : urls;
-      setCurrentReport(firstReport || null);
+      setCurrentReport(userProfile.domoUrl || null);
     }
   }, [userProfile]);
 
@@ -34,23 +32,24 @@ export default function DashboardPage() {
     return <LoadingSpinner />;
   }
   
-  if (isPlatformAdmin) {
-    return <PlatformAdminDashboard />;
-  }
+  // if (isPlatformAdmin) {
+  //   return <PlatformAdminDashboard />;
+  // }
   
-  const getReportName = (url: string | null): string => {
-    if (!url) return "Dashboard";
-    try {
-        const parts = url.split('/');
-        const lastPart = parts[parts.length - 1] || '';
-        return lastPart.split('?')[0].replace(/-/g, ' ').replace(/_/g, ' ') || 'Report';
-    } catch {
-        return "Report";
-    }
-  };
+  // const getReportName = (url: string | null): string => {
+  //   if (!url) return "Dashboard";
+  //   try {
+  //       const parts = url.split('/');
+  //       const lastPart = parts[parts.length - 1] || '';
+  //       return lastPart.split('?')[0].replace(/-/g, ' ').replace(/_/g, ' ') || 'Report';
+  //   } catch {
+  //       return "Report";
+  //   }
+  // };
 
-  const viewableReports = Array.isArray(userProfile.dashboardUrl) ? userProfile.dashboardUrl : (userProfile.dashboardUrl ? [userProfile.dashboardUrl] : []);
-  const currentReportName = getReportName(currentReport);
+  //const viewableReports = Array.isArray(userProfile.dashboardUrl) ? userProfile.dashboardUrl : (userProfile.dashboardUrl ? [userProfile.dashboardUrl] : []);
+  //const currentReportName = getReportName(currentReport);
+  const currentReportName = userProfile.domoUrl
 
   return (
     <div className="container mx-auto p-4 sm:p-6 lg:p-8 h-full flex flex-col">
@@ -61,7 +60,7 @@ export default function DashboardPage() {
             {currentReport ? currentReportName : 'An overview of your key business metrics.'}
           </p>
         </div>
-        {viewableReports.length > 1 && (
+        {/* {viewableReports.length > 1 && (
           <Select onValueChange={setCurrentReport} value={currentReport || ''}>
             <SelectTrigger className="w-full sm:w-[280px]">
               <SelectValue placeholder="Select a report" />
@@ -74,7 +73,7 @@ export default function DashboardPage() {
               ))}
             </SelectContent>
           </Select>
-        )}
+        )} */}
       </div>
       <div className="flex-1 rounded-lg overflow-hidden border border-border/60 shadow-sm min-h-0">
         <DashboardEmbed url={currentReport} />

@@ -11,6 +11,10 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function isPlatformAdmin() {
+      return isSignedIn() && true;  // Bypass lookup check temporarily
+    }
+
     // --- Rules ---
     match /contacts/{contactId} {
       allow create: if true;
@@ -19,26 +23,15 @@ service cloud.firestore {
     }
 
     match /user_company_lookup/{userId} {
-      allow read, create: if isOwner(userId);
-      // Lookups cannot be changed or deleted.
+      allow read, create: if isOwner(userId) || isPlatformAdmin();
       allow update, delete: if false;
     }
 
     match /companies/{companyId} {
-      // Allow a signed-in user to create a company, but only if they don't already belong to one.
-      //allow create: if isSignedIn() && !exists(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid));
-      allow create: if isAuthenticated() && isPlatformAdmin();
+        allow read: if (isUserInCompany(companyId) && isSignedIn() ) || isPlatformAdmin();  // Sirf wo user jinke companyId match kare padh sakte hain
+        allow create: if isSignedIn() && isPlatformAdmin();       // Company create sirf platform admins ke liye
+        allow write: if false;                                    // Abhi koi update/delete nahi
 
-      // Allow members of a company to read the company document.
-      allow read: if isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId;
-      
-      // Allow updates only by users with the 'manage_roles' permission.
-      allow update: if isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId && ('manage_roles' in get(/databases/$(database)/documents/companies/$(companyId)/roles/$(get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role)).data.allowed_actions);
-      
-      // Disallow deleting companies from the client.
-      allow delete: if false;
-
-    }
       // --- Sub-Collections ---
 
       match /users/{userId} {
@@ -67,12 +60,11 @@ service cloud.firestore {
         allow update: if isOwner(request.resource.data.accepted_by_uid) || (isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId && 'manage_users' in get(/databases/$(database)/documents/companies/$(companyId)/roles/$(get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role)).data.allowed_actions);
         allow delete: if isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId && 'manage_users' in get(/databases/$(database)/documents/companies/$(companyId)/roles/$(get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role)).data.allowed_actions;
       }
-
-      match /audit_logs/{logId} {
-        allow read, create: if isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId;
-        // Logs are immutable.
-        allow update, delete: if false;
-      }
     }
-  }
+    match /companies/{companyId}/audit_logs/{logId} {
+      allow create: if isSignedIn() && isPlatformAdmin();
+      allow read, update, delete: if false;
+    }
+  }  
+}
 

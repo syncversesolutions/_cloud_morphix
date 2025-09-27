@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/accordion";
 
 const mainNavLinks = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/enquiries", label: "Enquiries", icon: MailQuestion, platformAdminOnly: true },
 ];
 

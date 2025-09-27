@@ -18,7 +18,7 @@ export default function DashboardEmbed({ url }: DashboardEmbedProps) {
   }
 
   return (
-    <div className="h-full w-full">
+    <div className="h-full w-full ">
       <iframe
         src={url}
         className="h-full w-full border-0"

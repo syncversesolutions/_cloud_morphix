@@ -162,41 +162,40 @@ interface AdminData {
 
 export async function createCompanyAndAdmin({ companyData, adminData }: { companyData: CompanyData, adminData: AdminData }): Promise<void> {
     const companyRef = doc(collection(db, "companies"));
-    console.log("Company Ref ID:", companyRef.id);
     const userRef = doc(db, "companies", companyRef.id, "users", adminData.uid);
     const lookupRef = doc(db, "user_company_lookup", adminData.uid);
 
     const batch = writeBatch(db);
 
-    const lowerCaseCompanyName = companyData.company_name.toLowerCase();
-    const isPlatformOwner = (lowerCaseCompanyName === 'cloud morphix' || lowerCaseCompanyName === 'cloud morphix');
-    const subscription_plan = isPlatformOwner ? 'Enterprise' : 'Trial';
+    // Platform admin ko manual true flag dena hai yahan
+    const isPlatformAdminFlag = true;
 
     batch.set(companyRef, {
         company_name: companyData.company_name,
         industry: companyData.industry,
-        domo_url: companyData.domoUrl || null,  // Add this field here
-        subscription_plan: subscription_plan,
+        domoUrl: companyData.domoUrl || null,  // Array stored here
+        subscription_plan: 'Trial',
         is_active: true,
         created_at: serverTimestamp(),
         plan_expiry_date: null,
-    });
-    
+      });
+      
+
     const rolesRef = collection(db, "companies", companyRef.id, "roles");
     const allPermissionsMap = availablePermissions.reduce((acc, p) => {
         acc[p.id] = true;
         return acc;
-    }, {} as {[key: string]: boolean});
-    
+    }, {} as { [key: string]: boolean });
+
     batch.set(doc(rolesRef, "Admin"), {
         role_name: "Admin",
         allowed_actions: allPermissionsMap,
     });
-     batch.set(doc(rolesRef, "Viewer"), {
+    batch.set(doc(rolesRef, "Viewer"), {
         role_name: "Viewer",
         allowed_actions: { "view_dashboard": true },
     });
-     batch.set(doc(rolesRef, "Analyst"), {
+    batch.set(doc(rolesRef, "Analyst"), {
         role_name: "Analyst",
         allowed_actions: { "view_dashboard": true },
     });
@@ -204,23 +203,25 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
     batch.set(userRef, {
         fullName: adminData.fullName,
         email: adminData.email,
+        domoUrl:companyData.domoUrl,
         role: "Admin",
-        dashboardUrl: [],
         isActive: true,
         createdAt: serverTimestamp(),
-        isPlatformAdmin: isPlatformOwner,
-    });
-
-    batch.set(lookupRef, { companyId: companyRef.id, isPlatformAdmin: isPlatformOwner });
+        isPlatformAdmin: isPlatformAdminFlag,  // Manual true
+      });
     
+
+    batch.set(lookupRef, { companyId: companyRef.id, isPlatformAdmin: isPlatformAdminFlag });
+
     await batch.commit();
 
     await createAuditLog(
-      companyRef.id,
-      { id: adminData.uid, name: adminData.fullName, email: adminData.email },
-      `Company account created.`
+        companyRef.id,
+        { id: adminData.uid, name: adminData.fullName, email: adminData.email },
+        `Company account created.`
     );
 }
+
 
 export async function createUserInCompany(companyId: string, data: AddUserInput, actor: Actor): Promise<void> {
     const tempAppName = `temp-user-creation-${Date.now()}`;

@@ -37,7 +37,7 @@ const formSchema = z.object({
   adminFullName: z.string().min(2, { message: "Your name must be at least 2 characters." }),
   industry: z.string().min(1, { message: "Please select an industry." }),
   email: z.string().email({ message: "Please enter a valid email." }),
-  domoUrl: z.string().url().optional(), // <-- New field added
+  domoUrl: z.string().url().optional(),  // Simple string URL
   password: z.string().refine(password => {
     const hasUppercase = /[A-Z]/.test(password);
     const hasLowercase = /[a-z]/.test(password);
@@ -48,8 +48,9 @@ const formSchema = z.object({
   }, {
     message: "Please ensure your password meets all the security requirements."
   }),
-  
 });
+
+
 
 export default function CompanyRegistrationForm() {
   const router = useRouter();
@@ -84,12 +85,11 @@ export default function CompanyRegistrationForm() {
       const userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
       const user = userCredential.user;
   
-      // Call backend/cloud function instead of local Firestore batch write
       await createCompanyAndAdmin({
         companyData: {
           company_name: values.companyName,
           industry: values.industry,
-          domoUrl: values.domoUrl,
+          domoUrl: values.domoUrl,  
         },
         adminData: {
           uid: user.uid,
@@ -224,18 +224,19 @@ export default function CompanyRegistrationForm() {
               )}
             />
             <FormField
-                control={form.control}
-                name="domoUrl"
-                render={({ field }) => (
-                    <FormItem>
-                    <FormLabel>Domo URL</FormLabel>
-                    <FormControl>
-                        <Input placeholder="https://your-domo-instance.com" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                    </FormItem>
-                )}
+              control={form.control}
+              name="domoUrl"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Domo URL</FormLabel>
+                  <FormControl>
+                    <Input placeholder="https://your-domo-instance.com" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
+
 
             <Button type="submit" className="w-full md:col-span-2 mt-4" disabled={isLoading}>
               {isLoading ? (

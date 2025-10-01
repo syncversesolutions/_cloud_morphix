@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from "react";
@@ -10,6 +9,7 @@ import { createUserWithEmailAndPassword } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { createCompanyAndAdmin } from "@/services/firestore";
 
+import { useAuth } from "@/hooks/use-auth"; // Import Auth hook
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -31,6 +31,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
 import { CheckCircle2, XCircle } from "lucide-react";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import LoadingSpinner from "@/components/loading-spinner";
 
 const formSchema = z.object({
   companyName: z.string().min(2, { message: "Company name must be at least 2 characters." }),
@@ -50,13 +52,30 @@ const formSchema = z.object({
   }),
 });
 
-
-
 export default function CompanyRegistrationForm() {
   const router = useRouter();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [password, setPassword] = useState("");
+
+  // Get auth state
+  const { isPlatformAdmin, loading } = useAuth();
+
+  // Guard - show loading spinner or access denied if not admin
+  if (loading) {
+    return <LoadingSpinner />;
+  }
+
+  if (!isPlatformAdmin) {
+    return (
+      <div className="container mx-auto py-10">
+        <Alert variant="destructive">
+          <AlertTitle>Access Denied</AlertTitle>
+          <AlertDescription>Only platform admins can register a new company.</AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
 
   const passwordChecks = [
     { label: "8-16 characters long", satisfied: password.length >= 8 && password.length <= 16 },
@@ -75,7 +94,7 @@ export default function CompanyRegistrationForm() {
       industry: "",
       email: "",
       password: "",
-      domoUrl:"",
+      domoUrl: "",
     },
   });
 
@@ -84,7 +103,7 @@ export default function CompanyRegistrationForm() {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
       const user = userCredential.user;
-  
+
       await createCompanyAndAdmin({
         companyData: {
           company_name: values.companyName,
@@ -95,9 +114,9 @@ export default function CompanyRegistrationForm() {
           uid: user.uid,
           email: values.email,
           fullName: values.adminFullName,
-        }
+        },
       });
-  
+
       router.push("/dashboard");
     } catch (error: any) {
       toast({
@@ -109,7 +128,6 @@ export default function CompanyRegistrationForm() {
       setIsLoading(false);
     }
   }
-  
 
   return (
     <Card className="w-full">
@@ -146,7 +164,7 @@ export default function CompanyRegistrationForm() {
                 </FormItem>
               )}
             />
-             <FormField
+            <FormField
               control={form.control}
               name="email"
               render={({ field }) => (
@@ -165,7 +183,7 @@ export default function CompanyRegistrationForm() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Industry</FormLabel>
-                   <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Select an industry" />
@@ -194,22 +212,22 @@ export default function CompanyRegistrationForm() {
                 <FormItem className="">
                   <FormLabel>Password</FormLabel>
                   <FormControl>
-                    <Input 
-                      type="password" 
-                      placeholder="••••••••" 
+                    <Input
+                      type="password"
+                      placeholder="••••••••"
                       {...field}
                       onChange={(e) => {
                         field.onChange(e.target.value);
                         setPassword(e.target.value);
                       }}
-                     />
+                    />
                   </FormControl>
                   <FormMessage />
                   <div className="space-y-1 pt-2">
                     {passwordChecks.map((check, index) => (
                       <div key={index} className="flex items-center text-sm">
                         {check.satisfied ? (
-                           <CheckCircle2 className="mr-2 h-4 w-4 text-green-500" />
+                          <CheckCircle2 className="mr-2 h-4 w-4 text-green-500" />
                         ) : (
                           <XCircle className="mr-2 h-4 w-4 text-muted-foreground" />
                         )}
@@ -220,7 +238,6 @@ export default function CompanyRegistrationForm() {
                     ))}
                   </div>
                 </FormItem>
-                
               )}
             />
             <FormField
@@ -237,19 +254,18 @@ export default function CompanyRegistrationForm() {
               )}
             />
 
-
             <Button type="submit" className="w-full md:col-span-2 mt-4" disabled={isLoading}>
               {isLoading ? (
                 <div className="h-5 w-5 animate-spin rounded-full border-2 border-solid border-background border-t-transparent"></div>
               ) : "Create Company Account"}
             </Button>
             <div className="text-sm md:col-span-2 text-center mt-4 space-y-2">
-                <p className="text-muted-foreground">
-                  Already have an account?{" "}
-                  <Link href="/login" className="font-medium text-primary hover:underline">
-                    Login here
-                  </Link>
-                </p>
+              <p className="text-muted-foreground">
+                Already have an account?{" "}
+                <Link href="/login" className="font-medium text-primary hover:underline">
+                  Login here
+                </Link>
+              </p>
             </div>
           </form>
         </Form>
@@ -257,5 +273,3 @@ export default function CompanyRegistrationForm() {
     </Card>
   );
 }
-
-    

@@ -17,7 +17,6 @@ export interface UserProfile {
     email: string;
     role: string; // The name of the role, e.g., "Admin"
     allowed_actions: string[]; // Permissions inherited from the role
-    dashboardUrl?: string | string[];
     domoUrl?: string;  // Added domoUrl field here
     isActive: boolean;
     createdAt: any;
@@ -30,7 +29,7 @@ export interface Company {
     id: string;
     company_name: string;
     industry: string;
-    domo_url?: string;  // Added domo_url field here
+    domoUrl?: string;  // Added domo_url field here
     subscription_plan: 'Trial' | 'Basic' | 'Enterprise';
     is_active: boolean;
     created_at: Timestamp;
@@ -52,7 +51,7 @@ export const addUserFormSchema = z.object({
   }, {
     message: "Password does not meet security requirements."
   }),
-  dashboardUrl: z.array(z.string()).optional(),
+  domoUrl: z.string().url(),  // Simple string URL
 });
 export type AddUserInput = z.infer<typeof addUserFormSchema>;
 
@@ -138,7 +137,6 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
         email: userData.email,
         role: userRoleName,
         allowed_actions: allowed_actions,
-        dashboardUrl: userData.dashboardUrl,
         domoUrl: userData.domoUrl,  // Include domoUrl here
         isActive: userData.isActive,
         createdAt: userData.createdAt,
@@ -160,27 +158,25 @@ interface AdminData {
     fullName: string;
 }
 
-export async function createCompanyAndAdmin({ companyData, adminData }: { companyData: CompanyData, adminData: AdminData }): Promise<void> {
+export async function createCompanyAndAdmin({ companyData, adminData, isPlatformAdminFlag = false }: { companyData: CompanyData, adminData: AdminData, isPlatformAdminFlag?: boolean }): Promise<void> {
     const companyRef = doc(collection(db, "companies"));
     const userRef = doc(db, "companies", companyRef.id, "users", adminData.uid);
     const lookupRef = doc(db, "user_company_lookup", adminData.uid);
 
     const batch = writeBatch(db);
 
-    // Platform admin ko manual true flag dena hai yahan
-    const isPlatformAdminFlag = true;
-
+    // Set company document
     batch.set(companyRef, {
         company_name: companyData.company_name,
         industry: companyData.industry,
-        domoUrl: companyData.domoUrl || null,  // Array stored here
+        domoUrl: companyData.domoUrl || null,
         subscription_plan: 'Trial',
         is_active: true,
         created_at: serverTimestamp(),
         plan_expiry_date: null,
-      });
-      
+    });
 
+    // Set default roles for the new company
     const rolesRef = collection(db, "companies", companyRef.id, "roles");
     const allPermissionsMap = availablePermissions.reduce((acc, p) => {
         acc[p.id] = true;
@@ -200,17 +196,18 @@ export async function createCompanyAndAdmin({ companyData, adminData }: { compan
         allowed_actions: { "view_dashboard": true },
     });
 
+    // Set user document (company admin user), with isPlatformAdminFlag controlling platform admin status
     batch.set(userRef, {
         fullName: adminData.fullName,
         email: adminData.email,
-        domoUrl:companyData.domoUrl,
+        domoUrl: companyData.domoUrl,
         role: "Admin",
         isActive: true,
         createdAt: serverTimestamp(),
-        isPlatformAdmin: isPlatformAdminFlag,  // Manual true
-      });
-    
+        isPlatformAdmin: isPlatformAdminFlag,   // Now false by default
+    });
 
+    // Set user_company_lookup doc
     batch.set(lookupRef, { companyId: companyRef.id, isPlatformAdmin: isPlatformAdminFlag });
 
     await batch.commit();
@@ -240,7 +237,7 @@ export async function createUserInCompany(companyId: string, data: AddUserInput,
             fullName: data.fullName,
             email: data.email,
             role: data.role,
-            dashboardUrl: data.dashboardUrl || [],
+            domoUrl:data.domoUrl,
             isActive: true,
             createdAt: serverTimestamp(),
             isPlatformAdmin: false, // Regular users are never platform admins
@@ -292,7 +289,7 @@ export async function getCompanyUsers(companyId: string): Promise<UserProfile[]>
             email: userData.email,
             role: userRole,
             allowed_actions: allowed_actions,
-            dashboardUrl: userData.dashboardUrl,
+            domoUrl: userData.domoUrl || null,   // ✅ consistent with user creation
             isActive: userData.isActive,
             createdAt: userData.createdAt,
             companyId: companyId,
@@ -351,18 +348,45 @@ export async function updateUserRole(uid: string, newRole: string, actor: Actor,
 }
 
 export async function removeUserFromCompany(user: UserProfile, actor: Actor): Promise<void> {
-    console.warn(`User ${user.email} was removed from the company in Firestore, but their Auth account still exists.`);
-
-    const userRef = doc(db, "companies", user.companyId, "users", user.id);
+    console.warn(`Attempting to remove user ${user.email} from company.`);
+  
+    const userRef   = doc(db, "companies", user.companyId, "users", user.id);
     const lookupRef = doc(db, "user_company_lookup", user.id);
-    
-    const batch = writeBatch(db);
-    batch.delete(userRef);
-    batch.delete(lookupRef);
-    await batch.commit();
+  
+    console.log("STEP 1: delete company user:", userRef.path);
+    try {
+      await deleteDoc(userRef);
+      console.log("STEP 1 OK");
+    } catch (error) {
+      console.error("STEP 1 FAILED (company user delete):", error);
+      throw error;
+    }
+  
+    console.log("STEP 2: delete lookup:", lookupRef.path);
+    try {
+      await deleteDoc(lookupRef);
+      console.log("STEP 2 OK");
+    } catch (error) {
+      console.error("STEP 2 FAILED (lookup delete):", error);
+      throw error;
+    }
+  
+    console.log("STEP 3: create audit log");
+    try {
+      await createAuditLog(
+        user.companyId,
+        actor,
+        `Removed user ${user.fullName} (${user.email}) from the company.`
+      );
+      console.log("STEP 3 OK");
+    } catch (error) {
+      console.error("STEP 3 FAILED (audit log create):", error);
+      // don't rethrow if you don't want to block UX on logging
+    }
+  }
+  
+  
 
-    await createAuditLog(user.companyId, actor, `Removed user ${user.fullName} (${user.email}) from the company.`);
-}
 
 export async function getContacts(): Promise<Contact[]> {
     const contactsCollection = collection(db, "contacts");

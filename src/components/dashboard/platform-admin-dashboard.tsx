@@ -10,12 +10,31 @@ import { Building2, DollarSign, Users, AlertTriangle } from "lucide-react";
 import { format } from "date-fns";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/hooks/use-auth";
+import LoadingSpinner from "@/components/loading-spinner";
 
 export default function PlatformAdminDashboard() {
+  const { isPlatformAdmin, loading } = useAuth();
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingCompanies, setLoadingCompanies] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
+
+  // Guard: show spinner or access denied
+  if (loading) {
+    return <LoadingSpinner />;
+  }
+
+  if (!isPlatformAdmin) {
+    return (
+      <div className="container mx-auto py-10">
+        <Alert variant="destructive">
+          <AlertTitle>Access Denied</AlertTitle>
+          <AlertDescription>Only platform admins can view platform dashboard.</AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
 
   useEffect(() => {
     getAllCompanies()
@@ -24,38 +43,38 @@ export default function PlatformAdminDashboard() {
         console.error("Failed to fetch companies:", err);
         setError("Could not load company data. Please ensure you have the correct permissions.");
         toast({
-            variant: "destructive",
-            title: "Error",
-            description: "Failed to load platform data.",
+          variant: "destructive",
+          title: "Error",
+          description: "Failed to load platform data.",
         });
       })
-      .finally(() => setLoading(false));
+      .finally(() => setLoadingCompanies(false));
   }, [toast]);
 
   const stats = {
     totalCompanies: companies.length,
     totalRevenue: companies.reduce((acc, company) => {
-        if (company.subscription_plan === 'Basic') return acc + 99;
-        if (company.subscription_plan === 'Enterprise') return acc + 499;
-        return acc;
+      if (company.subscription_plan === "Basic") return acc + 99;
+      if (company.subscription_plan === "Enterprise") return acc + 499;
+      return acc;
     }, 0),
-    activeSubscriptions: companies.filter(c => c.subscription_plan !== 'Trial').length,
+    activeSubscriptions: companies.filter((c) => c.subscription_plan !== "Trial").length,
   };
 
-  if (loading) {
+  if (loadingCompanies) {
     return (
-        <div className="container mx-auto p-4 sm:p-6 lg:p-8">
-            <div className="mb-6">
-                <h2 className="text-3xl font-bold tracking-tight font-headline">Platform Overview</h2>
-                <p className="text-muted-foreground">Key metrics and registered companies for Cloud Morphix.</p>
-            </div>
-            <div className="grid gap-4 md:grid-cols-3 mb-6">
-                <Skeleton className="h-32" />
-                <Skeleton className="h-32" />
-                <Skeleton className="h-32" />
-            </div>
-            <Skeleton className="h-96" />
+      <div className="container mx-auto p-4 sm:p-6 lg:p-8">
+        <div className="mb-6">
+          <h2 className="text-3xl font-bold tracking-tight font-headline">Platform Overview</h2>
+          <p className="text-muted-foreground">Key metrics and registered companies for Cloud Morphix.</p>
         </div>
+        <div className="grid gap-4 md:grid-cols-3 mb-6">
+          <Skeleton className="h-32" />
+          <Skeleton className="h-32" />
+          <Skeleton className="h-32" />
+        </div>
+        <Skeleton className="h-96" />
+      </div>
     );
   }
 
@@ -132,18 +151,16 @@ export default function PlatformAdminDashboard() {
                     <TableCell className="font-medium">{company.company_name}</TableCell>
                     <TableCell className="capitalize">{company.industry}</TableCell>
                     <TableCell>
-                      <Badge variant={company.subscription_plan === 'Trial' ? "outline" : "secondary"}>
+                      <Badge variant={company.subscription_plan === "Trial" ? "outline" : "secondary"}>
                         {company.subscription_plan}
                       </Badge>
                     </TableCell>
                     <TableCell>
-                       <Badge variant={company.is_active ? "default" : "destructive"}>
-                        {company.is_active ? 'Active' : 'Inactive'}
+                      <Badge variant={company.is_active ? "default" : "destructive"}>
+                        {company.is_active ? "Active" : "Inactive"}
                       </Badge>
                     </TableCell>
-                    <TableCell>
-                      {company.created_at?.seconds ? format(new Date(company.created_at.seconds * 1000), "PP") : 'N/A'}
-                    </TableCell>
+                    <TableCell>{company.created_at?.seconds ? format(new Date(company.created_at.seconds * 1000), "PP") : "N/A"}</TableCell>
                   </TableRow>
                 ))
               ) : (

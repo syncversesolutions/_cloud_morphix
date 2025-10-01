@@ -3,68 +3,95 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // --- Helper Functions ---
+    // ---- Helpers ----
     function isSignedIn() {
       return request.auth != null;
     }
+
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    function isPlatformAdmin() {
-      return isSignedIn() && true;  // Bypass lookup check temporarily
+    function lookupPath(uid) {
+      return /databases/$(database)/documents/user_company_lookup/$(uid);
     }
 
-    // --- Rules ---
+    function isPlatformAdmin() {
+      return isSignedIn() &&
+        exists(lookupPath(request.auth.uid)) &&
+        get(lookupPath(request.auth.uid)).data.isPlatformAdmin == true;
+    }
+
+    function isUserInCompany(companyId) {
+      return isSignedIn() &&
+        exists(lookupPath(request.auth.uid)) &&
+        get(lookupPath(request.auth.uid)).data.companyId == companyId;
+    }
+
+    function isCompanyAdmin(companyId) {
+      return
+        isUserInCompany(companyId) &&
+        exists(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)) &&
+        exists(
+          /databases/$(database)/documents/companies/$(companyId)/roles/$(
+            get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role
+          )
+        ) &&
+        get(
+          /databases/$(database)/documents/companies/$(companyId)/roles/$(
+            get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role
+          )
+        ).data.allowed_actions.manage_users == true;
+    }
+
+    // ---- Rules ----
     match /contacts/{contactId} {
       allow create: if true;
-      // Allow platform admins to read/write contact form submissions.
-      allow read, write: if isSignedIn() && get(/databases/$(database)/documents/companies/$(get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId)).data.company_name == 'Cloud Morphix';
+      allow read, write: if isSignedIn() &&
+        get(/databases/$(database)/documents/companies/$(get(lookupPath(request.auth.uid)).data.companyId)).data.company_name == 'Cloud Morphix';
     }
 
     match /user_company_lookup/{userId} {
-      allow read, create: if isOwner(userId) || isPlatformAdmin();
-      allow update, delete: if false;
+      allow read: if isSignedIn() && (
+        request.auth.uid == userId ||
+        isPlatformAdmin() ||
+        isCompanyAdmin(resource.data.companyId)
+      );
+
+      allow create: if isPlatformAdmin() || isCompanyAdmin(request.resource.data.companyId);
+
+      allow update: if false;
+
+      // allow delete if Platform Admin OR admin of that user's company
+      allow delete: if isPlatformAdmin() ||
+        (exists(lookupPath(userId)) &&
+         isCompanyAdmin(get(lookupPath(userId)).data.companyId));
     }
 
     match /companies/{companyId} {
-        allow read: if (isUserInCompany(companyId) && isSignedIn() ) || isPlatformAdmin();  // Sirf wo user jinke companyId match kare padh sakte hain
-        allow create: if isSignedIn() && isPlatformAdmin();       // Company create sirf platform admins ke liye
-        allow write: if false;                                    // Abhi koi update/delete nahi
-
-      // --- Sub-Collections ---
+      allow read: if isUserInCompany(companyId) || isPlatformAdmin();
+      allow create: if isPlatformAdmin();
+      allow write: if false;
 
       match /users/{userId} {
-        allow read: if isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId;
-        allow create: if isOwner(userId); // Allow user to create their own record during registration/invite.
-        // Allow user to update their own profile, or allow an admin to update any profile.
-        allow update: if isOwner(userId) || (isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId && 'manage_users' in get(/databases/$(database)/documents/companies/$(companyId)/roles/$(get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role)).data.allowed_actions);
-        allow delete: if isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId && 'manage_users' in get(/databases/$(database)/documents/companies/$(companyId)/roles/$(get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role)).data.allowed_actions;
+        allow read: if isUserInCompany(companyId);
+        allow create: if isOwner(userId);
+        allow update: if isOwner(userId) || isCompanyAdmin(companyId) || isPlatformAdmin();
+        // ✅ only company admin OR platform admin can delete a user
+        allow delete: if isCompanyAdmin(companyId) || isPlatformAdmin();
+        // (Optional) block users from deleting themself:
+        // allow delete: if (isCompanyAdmin(companyId) || isPlatformAdmin()) && request.auth.uid != userId;
       }
 
       match /roles/{roleName} {
-        allow read: if isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId;
-        // Allow role creation during company setup OR if user has permission.
-        allow create: if (request.resource == null) || (isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId && 'manage_roles' in get(/databases/$(database)/documents/companies/$(companyId)/roles/$(get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role)).data.allowed_actions);
-        allow update, delete: if isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId && 'manage_roles' in get(/databases/$(database)/documents/companies/$(companyId)/roles/$(get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role)).data.allowed_actions;
+        allow read: if isUserInCompany(companyId);
+        allow create: if isCompanyAdmin(companyId) || isPlatformAdmin();
+        allow update, delete: if isCompanyAdmin(companyId) || isPlatformAdmin();
       }
 
-      match /invites/{inviteId} {
-        // Allow ANYONE to read a single invite. This is required for the invite flow to work for new users.
-        // It is secure because invite IDs are unique and unguessable.
-        allow get: if true; 
-        
-        // Only allow company members to LIST all invites.
-        allow list: if isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId;
-        allow create: if isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId && 'manage_users' in get(/databases/$(database)/documents/companies/$(companyId)/roles/$(get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role)).data.allowed_actions;
-        allow update: if isOwner(request.resource.data.accepted_by_uid) || (isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId && 'manage_users' in get(/databases/$(database)/documents/companies/$(companyId)/roles/$(get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role)).data.allowed_actions);
-        allow delete: if isSignedIn() && get(/databases/$(database)/documents/user_company_lookup/$(request.auth.uid)).data.companyId == companyId && 'manage_users' in get(/databases/$(database)/documents/companies/$(companyId)/roles/$(get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role)).data.allowed_actions;
+      match /audit_logs/{logId} {
+        allow create: if isCompanyAdmin(companyId) || isPlatformAdmin();
       }
     }
-    match /companies/{companyId}/audit_logs/{logId} {
-      allow create: if isSignedIn() && isPlatformAdmin();
-      allow read, update, delete: if false;
-    }
-  }  
+  }
 }
-

@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
@@ -10,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { ShieldPlus, UserPlus, MoreHorizontal, AlertTriangle } from "lucide-react";
 import ManageRolesDialog from "@/components/dashboard/manage-roles-dialog";
-import AddUserDialog from "@/components/dashboard/invite-user-dialog"; // Renamed to AddUserDialog internally
+import AddUserDialog from "@/components/dashboard/invite-user-dialog";
 import { useToast } from "@/hooks/use-toast";
 import LoadingSpinner from "@/components/loading-spinner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
@@ -44,18 +43,14 @@ export default function UserManagementPage() {
         getCompanyUsers(companyId),
         getCompanyRoles(companyId),
       ]);
-      
+
       setUsers(fetchedUsers);
       setRoles(fetchedRoles);
 
       const allReportUrls = new Set<string>();
       fetchedUsers.forEach(u => {
-        if (u.dashboardUrl) {
-          if (Array.isArray(u.dashboardUrl)) {
-              u.dashboardUrl.forEach(report => allReportUrls.add(report));
-          } else if (typeof u.dashboardUrl === 'string') {
-              allReportUrls.add(u.dashboardUrl);
-          }
+        if (u.domoUrl) {
+          allReportUrls.add(u.domoUrl);
         }
       });
       setAvailableReports(Array.from(allReportUrls).sort());
@@ -76,15 +71,15 @@ export default function UserManagementPage() {
     if (companyId && canManageUsers) {
       fetchUsersAndRoles();
     } else {
-        setLoading(false);
+      setLoading(false);
     }
   }, [companyId, canManageUsers, fetchUsersAndRoles]);
 
   const getActor = () => {
-      if (!user || !userProfile) return null;
-      return { id: user.uid, name: userProfile.fullName, email: userProfile.email };
+    if (!user || !userProfile) return null;
+    return { id: user.uid, name: userProfile.fullName, email: userProfile.email };
   }
-  
+
   const handleAddNewReport = (newReportUrl: string) => {
     if (newReportUrl && !availableReports.includes(newReportUrl)) {
       setAvailableReports(prev => [...prev, newReportUrl].sort());
@@ -116,30 +111,35 @@ export default function UserManagementPage() {
       return false;
     }
   };
-  
+
   const handleAddUser = async (values: AddUserInput) => {
     const actor = getActor();
-    if (!companyId || !actor) {
+    if (!companyId || !actor || !userProfile) {
         toast({ variant: "destructive", title: "Error", description: "Cannot identify the current administrator." });
         return false;
     }
+
+    const newUserData: AddUserInput = {
+      ...values,
+      domoUrl: userProfile.domoUrl || "",  // Use client admin's domoUrl here
+    };
+
     try {
-      await createUserInCompany(companyId, values, actor);
+      await createUserInCompany(companyId, newUserData, actor);
       toast({ title: "User Created", description: `An account for ${values.fullName} has been successfully created.` });
       fetchUsersAndRoles();
       return true;
     } catch (error: any) {
-       toast({
+      toast({
         variant: "destructive",
         title: "Creation Failed",
-        description: error.code === 'auth/email-already-in-use' 
-          ? 'This email address is already registered.' 
-          : 'Failed to create the user account.',
+        description: error.code === "auth/email-already-in-use"
+          ? "This email address is already registered."
+          : "Failed to create the user account.",
       });
       return false;
     }
   };
-
 
   const handleChangeRole = async (newRole: string) => {
     const actor = getActor();
@@ -189,7 +189,7 @@ export default function UserManagementPage() {
       </div>
     );
   }
-  
+
   const sortedUsers = [...users].sort((a, b) => a.fullName.localeCompare(b.fullName));
 
   return (
@@ -224,10 +224,10 @@ export default function UserManagementPage() {
             <Table>
                 <TableHeader>
                 <TableRow>
-                    <TableHead>Full Name</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>Full Name</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -284,7 +284,7 @@ export default function UserManagementPage() {
             </Table>
         </CardContent>
       </Card>
-      
+
       <ManageRolesDialog
         isOpen={isRolesDialogOpen}
         onOpenChange={setIsRolesDialogOpen}
@@ -299,8 +299,8 @@ export default function UserManagementPage() {
         availableReports={availableReports}
         onAddUser={handleAddUser}
         onAddNewReport={handleAddNewReport}
-       />
-       
+      />
+      
       {selectedUser && (
          <>
             <ChangeRoleDialog

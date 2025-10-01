@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from 'react';
@@ -16,12 +15,10 @@ import {
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Badge } from '@/components/ui/badge';
 import type { Role } from '@/services/firestore';
 import { addUserFormSchema, type AddUserInput } from '@/services/firestore';
-import { CheckCircle2, XCircle, Check, PlusCircle, X } from "lucide-react";
+import { CheckCircle2, XCircle, PlusCircle, X } from "lucide-react";
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 
@@ -29,15 +26,14 @@ interface AddUserDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   roles: Role[];
-  availableReports: string[];
+  availableReports: string[];  // Kept for reference, not used now
   onAddUser: (values: AddUserInput) => Promise<boolean>;
   onAddNewReport: (url: string) => void;
 }
 
-export default function AddUserDialog({ isOpen, onOpenChange, roles, availableReports, onAddUser, onAddNewReport }: AddUserDialogProps) {
+export default function AddUserDialog({ isOpen, onOpenChange, roles, onAddUser }: AddUserDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [password, setPassword] = useState("");
-  const [newReportUrl, setNewReportUrl] = useState("");
 
   const passwordChecks = [
     { label: "8-16 characters long", satisfied: password.length >= 8 && password.length <= 16 },
@@ -55,12 +51,13 @@ export default function AddUserDialog({ isOpen, onOpenChange, roles, availableRe
       email: '',
       role: '',
       password: '',
-      dashboardUrl: [],
+      domoUrl: '',    // Single string field
     },
   });
 
   async function onSubmit(values: AddUserInput) {
     setIsLoading(true);
+    console.log(values.domoUrl);
     const success = await onAddUser(values);
     setIsLoading(false);
     if (success) {
@@ -77,16 +74,6 @@ export default function AddUserDialog({ isOpen, onOpenChange, roles, availableRe
     }
     onOpenChange(open);
   }
-
-  const getReportName = (url: string) => {
-    try {
-      const parts = url.split('/');
-      const lastPart = parts[parts.length - 1] || '';
-      return lastPart.split('?')[0].replace(/-/g, ' ').replace(/_/g, ' ') || 'Unnamed Report';
-    } catch {
-      return 'Unnamed Report';
-    }
-  };
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
@@ -149,217 +136,23 @@ export default function AddUserDialog({ isOpen, onOpenChange, roles, availableRe
                 </FormItem>
               )}
             />
-            {/* <FormField
-              control={form.control}
-              name="dashboardUrl"
-              render={({ field }) => (
-                <FormItem className="flex flex-col">
-                  <FormLabel>Reports</FormLabel>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="w-full justify-start">
-                        <PlusCircle className="mr-2 h-4 w-4" />
-                        Assign Reports
-                        {field.value && field.value.length > 0 && (
-                            <Badge variant="secondary" className="ml-auto">{field.value.length} selected</Badge>
-                        )}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[450px] p-0" align="start">
-                      <Command>
-                        <CommandInput placeholder="Search reports..." />
-                        <CommandList>
-                          <CommandEmpty>No reports found.</CommandEmpty>
-                          <CommandGroup>
-                            {availableReports.map((report) => {
-                              const isSelected = field.value?.includes(report);
-                              return (
-                                <CommandItem
-                                  key={report}
-                                  onSelect={() => {
-                                    if (isSelected) {
-                                      field.onChange(field.value?.filter((r) => r !== report));
-                                    } else {
-                                      field.onChange([...(field.value || []), report]);
-                                    }
-                                  }}
-                                >
-                                  <div
-                                    className={cn(
-                                      "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
-                                      isSelected ? "bg-primary text-primary-foreground" : "opacity-50 [&_svg]:invisible"
-                                    )}
-                                  >
-                                    <Check className="h-4 w-4" />
-                                  </div>
-                                  <span className="capitalize">{getReportName(report)}</span>
-                                </CommandItem>
-                              );
-                            })}
-                          </CommandGroup>
-                        </CommandList>
-                        <Separator />
-                        <div className="p-2 space-y-2">
-                            <p className="text-xs text-muted-foreground">
-                                Can't find a report? Add the URL here.
-                            </p>
-                            <div className="flex items-center gap-2">
-                                <Input
-                                    placeholder="https://lookerstudio.google.com/..."
-                                    value={newReportUrl}
-                                    onChange={(e) => setNewReportUrl(e.target.value)}
-                                />
-                                <Button
-                                    type="button"
-                                    variant="secondary"
-                                    size="sm"
-                                    onClick={() => {
-                                        if (newReportUrl.startsWith('http')) {
-                                            onAddNewReport(newReportUrl);
-                                            const currentAssigned = form.getValues("dashboardUrl") || [];
-                                            if (!currentAssigned.includes(newReportUrl)) {
-                                                form.setValue("dashboardUrl", [...currentAssigned, newReportUrl]);
-                                            }
-                                            setNewReportUrl("");
-                                        }
-                                    }}
-                                    disabled={!newReportUrl.startsWith('http')}
-                                >
-                                    Add
-                                </Button>
-                            </div>
-                        </div>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
-                  <FormDescription>
-                    Select the reports that this user will have access to.
-                  </FormDescription>
-                  <div className="flex flex-wrap gap-1 pt-2">
-                    {field.value?.map((report) => (
-                       <Badge variant="secondary" key={report} className="flex items-center gap-1">
-                         <span className="capitalize">{getReportName(report)}</span>
-                         <button
-                            type="button"
-                            onClick={() => field.onChange(field.value?.filter((r) => r !== report))}
-                            className="rounded-full hover:bg-muted-foreground/20 p-0.5"
-                          >
-                           <X className="h-3 w-3" />
-                         </button>
-                       </Badge>
-                    ))}
-                  </div>
-                  <FormMessage />
-                </FormItem>
-              )}
-            /> */}
-
             <FormField
               control={form.control}
-              name="dashboardUrl"
+              name="domoUrl"
               render={({ field }) => (
-                <FormItem className="flex flex-col">
-                  <FormLabel>Reports</FormLabel>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="w-full justify-start">
-                        <PlusCircle className="mr-2 h-4 w-4" />
-                        Assign Reports
-                        {field.value && field.value.length > 0 && (
-                            <Badge variant="secondary" className="ml-auto">{field.value.length} selected</Badge>
-                        )}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[450px] p-0" align="start">
-                      <Command>
-                        <CommandInput placeholder="Search reports..." />
-                        <CommandList>
-                          <CommandEmpty>No reports found.</CommandEmpty>
-                          <CommandGroup>
-                            {availableReports.map((report) => {
-                              const isSelected = field.value?.includes(report);
-                              return (
-                                <CommandItem
-                                  key={report}
-                                  onSelect={() => {
-                                    if (isSelected) {
-                                      field.onChange(field.value?.filter((r) => r !== report));
-                                    } else {
-                                      field.onChange([...(field.value || []), report]);
-                                    }
-                                  }}
-                                >
-                                  <div
-                                    className={cn(
-                                      "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
-                                      isSelected ? "bg-primary text-primary-foreground" : "opacity-50 [&_svg]:invisible"
-                                    )}
-                                  >
-                                    <Check className="h-4 w-4" />
-                                  </div>
-                                  <span className="capitalize">{getReportName(report)}</span>
-                                </CommandItem>
-                              );
-                            })}
-                          </CommandGroup>
-                        </CommandList>
-                        <Separator />
-                        <div className="p-2 space-y-2">
-                            <p className="text-xs text-muted-foreground">
-                                Can't find a report? Add the URL here.
-                            </p>
-                            <div className="flex items-center gap-2">
-                                <Input
-                                    placeholder="https://lookerstudio.google.com/..."
-                                    value={newReportUrl}
-                                    onChange={(e) => setNewReportUrl(e.target.value)}
-                                />
-                                <Button
-                                    type="button"
-                                    variant="secondary"
-                                    size="sm"
-                                    onClick={() => {
-                                        if (newReportUrl.startsWith('http')) {
-                                            onAddNewReport(newReportUrl);
-                                            const currentAssigned = form.getValues("dashboardUrl") || [];
-                                            if (!currentAssigned.includes(newReportUrl)) {
-                                                form.setValue("dashboardUrl", [...currentAssigned, newReportUrl]);
-                                            }
-                                            setNewReportUrl("");
-                                        }
-                                    }}
-                                    disabled={!newReportUrl.startsWith('http')}
-                                >
-                                    Add
-                                </Button>
-                            </div>
-                        </div>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
+                <FormItem>
+                  <FormLabel>Domo URL</FormLabel>
+                  <FormControl>
+                    <Input placeholder="https://your-domo-instance.com" {...field} />
+                  </FormControl>
                   <FormDescription>
-                    Select the reports that this user will have access to.
+                    Enter the Domo URL assigned to this user for dashboard access.
                   </FormDescription>
-                  <div className="flex flex-wrap gap-1 pt-2">
-                    {field.value?.map((report) => (
-                       <Badge variant="secondary" key={report} className="flex items-center gap-1">
-                         <span className="capitalize">{getReportName(report)}</span>
-                         <button
-                            type="button"
-                            onClick={() => field.onChange(field.value?.filter((r) => r !== report))}
-                            className="rounded-full hover:bg-muted-foreground/20 p-0.5"
-                          >
-                           <X className="h-3 w-3" />
-                         </button>
-                       </Badge>
-                    ))}
-                  </div>
                   <FormMessage />
                 </FormItem>
               )}
             />
-
-             <FormField
+            <FormField
               control={form.control}
               name="password"
               render={({ field }) => (
@@ -374,14 +167,14 @@ export default function AddUserDialog({ isOpen, onOpenChange, roles, availableRe
                         field.onChange(e.target.value);
                         setPassword(e.target.value);
                       }}
-                     />
+                    />
                   </FormControl>
                   <FormMessage />
-                   <div className="space-y-1 pt-2">
+                  <div className="space-y-1 pt-2">
                     {passwordChecks.map((check, index) => (
                       <div key={index} className="flex items-center text-xs">
                         {check.satisfied ? (
-                           <CheckCircle2 className="mr-2 h-3 w-3 text-green-500" />
+                          <CheckCircle2 className="mr-2 h-3 w-3 text-green-500" />
                         ) : (
                           <XCircle className="mr-2 h-3 w-3 text-muted-foreground" />
                         )}

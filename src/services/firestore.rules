@@ -47,8 +47,10 @@ service cloud.firestore {
     // ---- Rules ----
     match /contacts/{contactId} {
       allow create: if true;
-      allow read, write: if isSignedIn() &&
-        get(/databases/$(database)/documents/companies/$(get(lookupPath(request.auth.uid)).data.companyId)).data.company_name == 'Cloud Morphix';
+      allow read, write: if isSignedIn() && (
+      get(/databases/$(database)/documents/companies/$(get(lookupPath(request.auth.uid)).data.companyId)).data.company_name == 'Cloud Morphix'
+      || isPlatformAdmin()
+      );
     }
 
     match /user_company_lookup/{userId} {

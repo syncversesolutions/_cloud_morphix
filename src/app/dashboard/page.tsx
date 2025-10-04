@@ -32,9 +32,9 @@ export default function DashboardPage() {
     return <LoadingSpinner />;
   }
   
-  // if (isPlatformAdmin) {
-  //   return <PlatformAdminDashboard />;
-  // }
+  if (isPlatformAdmin) {
+    return <PlatformAdminDashboard />;
+  }
   
   // const getReportName = (url: string | null): string => {
   //   if (!url) return "Dashboard";

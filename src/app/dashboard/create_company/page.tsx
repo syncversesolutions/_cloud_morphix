@@ -5,11 +5,15 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useRouter } from "next/navigation";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { auth } from "@/lib/firebase";
-import { createCompanyAndAdmin } from "@/services/firestore";
 
-import { useAuth } from "@/hooks/use-auth"; // Import Auth hook
+// ✅ Use a TEMP Firebase app so platform admin session intact rahe
+import { initializeApp, deleteApp } from "firebase/app";
+import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
+import { firebaseConfig } from "@/lib/firebase";
+
+import { createCompanyAndAdmin } from "@/services/firestore";
+import { useAuth } from "@/hooks/use-auth";
+
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -29,7 +33,6 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import Link from "next/link";
 import { CheckCircle2, XCircle } from "lucide-react";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import LoadingSpinner from "@/components/loading-spinner";
@@ -39,7 +42,7 @@ const formSchema = z.object({
   adminFullName: z.string().min(2, { message: "Your name must be at least 2 characters." }),
   industry: z.string().min(1, { message: "Please select an industry." }),
   email: z.string().email({ message: "Please enter a valid email." }),
-  domoUrl: z.string().url().optional(),  // Simple string URL
+  domoUrl: z.string().url().optional(),
   password: z.string().refine(password => {
     const hasUppercase = /[A-Z]/.test(password);
     const hasLowercase = /[a-z]/.test(password);
@@ -58,10 +61,22 @@ export default function CompanyRegistrationForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [password, setPassword] = useState("");
 
-  // Get auth state
   const { isPlatformAdmin, loading } = useAuth();
 
-  // Guard - show loading spinner or access denied if not admin
+  // ✅ All hooks must be called before any early return
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    mode: "onTouched",
+    defaultValues: {
+      companyName: "",
+      adminFullName: "",
+      industry: "",
+      email: "",
+      password: "",
+      domoUrl: "",
+    },
+  });
+
   if (loading) {
     return <LoadingSpinner />;
   }
@@ -85,30 +100,29 @@ export default function CompanyRegistrationForm() {
     { label: "At least one special character (@, $, !, %, *, ?, &)", satisfied: /[@$!%*?&]/.test(password) },
   ];
 
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
-    mode: "onTouched",
-    defaultValues: {
-      companyName: "",
-      adminFullName: "",
-      industry: "",
-      email: "",
-      password: "",
-      domoUrl: "",
-    },
-  });
-
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
+
+    // ✅ Create the new admin user using a TEMP app (no session switch)
+    const tempAppName = `temp-company-${Date.now()}`;
+    const tempApp = initializeApp(firebaseConfig, tempAppName);
+    const tempAuth = getAuth(tempApp);
+
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
+      // 1) Create user WITHOUT logging out the platform admin
+      const userCredential = await createUserWithEmailAndPassword(
+        tempAuth,
+        values.email,
+        values.password
+      );
       const user = userCredential.user;
 
+      // 2) Create company + default roles + user docs under current (platform admin) auth
       await createCompanyAndAdmin({
         companyData: {
           company_name: values.companyName,
           industry: values.industry,
-          domoUrl: values.domoUrl,  
+          domoUrl: values.domoUrl,
         },
         adminData: {
           uid: user.uid,
@@ -117,14 +131,17 @@ export default function CompanyRegistrationForm() {
         },
       });
 
+      // 3) Navigate (still logged in as platform admin)
       router.push("/dashboard");
     } catch (error: any) {
+      console.error(error);
       toast({
         variant: "destructive",
         title: "Registration Failed",
-        description: error.message || "An unexpected error occurred. Please try again.",
+        description: error?.message || "An unexpected error occurred. Please try again.",
       });
     } finally {
+      await deleteApp(tempApp); // cleanup
       setIsLoading(false);
     }
   }
@@ -227,11 +244,11 @@ export default function CompanyRegistrationForm() {
                     {passwordChecks.map((check, index) => (
                       <div key={index} className="flex items-center text-sm">
                         {check.satisfied ? (
-                          <CheckCircle2 className="mr-2 h-4 w-4 text-green-500" />
+                          <CheckCircle2 className="mr-2 h-4 w-4" />
                         ) : (
-                          <XCircle className="mr-2 h-4 w-4 text-muted-foreground" />
+                          <XCircle className="mr-2 h-4 w-4" />
                         )}
-                        <span className={check.satisfied ? 'text-foreground' : 'text-muted-foreground'}>
+                        <span className={check.satisfied ? "text-foreground" : "text-muted-foreground"}>
                           {check.label}
                         </span>
                       </div>
@@ -257,16 +274,10 @@ export default function CompanyRegistrationForm() {
             <Button type="submit" className="w-full md:col-span-2 mt-4" disabled={isLoading}>
               {isLoading ? (
                 <div className="h-5 w-5 animate-spin rounded-full border-2 border-solid border-background border-t-transparent"></div>
-              ) : "Create Company Account"}
+              ) : (
+                "Create Company Account"
+              )}
             </Button>
-            <div className="text-sm md:col-span-2 text-center mt-4 space-y-2">
-              <p className="text-muted-foreground">
-                Already have an account?{" "}
-                <Link href="/login" className="font-medium text-primary hover:underline">
-                  Login here
-                </Link>
-              </p>
-            </div>
           </form>
         </Form>
       </CardContent>

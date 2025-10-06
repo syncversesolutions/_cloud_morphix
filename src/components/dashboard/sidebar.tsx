@@ -27,6 +27,8 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { userProfile } = useAuth();
 
+  console.log("user is : " , userProfile);
+
   const isPlatformAdmin = userProfile?.isPlatformAdmin === true;
   const userPermissions = userProfile?.allowed_actions || [];
 

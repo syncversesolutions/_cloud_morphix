@@ -6,12 +6,13 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Building2, DollarSign, Users, AlertTriangle } from "lucide-react";
+import { Building2, DollarSign, Users, AlertTriangle, Pencil } from "lucide-react";
 import { format } from "date-fns";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
 import LoadingSpinner from "@/components/loading-spinner";
+import EditCompanyDialog from "@/components/dashboard/EditCompanyDialog";
 
 export default function PlatformAdminDashboard() {
   const { isPlatformAdmin, loading } = useAuth();
@@ -142,6 +143,7 @@ export default function PlatformAdminDashboard() {
                 <TableHead>Plan</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Date Registered</TableHead>
+                <TableHead className="text-left">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -161,11 +163,21 @@ export default function PlatformAdminDashboard() {
                       </Badge>
                     </TableCell>
                     <TableCell>{company.created_at?.seconds ? format(new Date(company.created_at.seconds * 1000), "PP") : "N/A"}</TableCell>
+                    <TableCell className="text-right">
+                      <EditCompanyDialog
+                        company={company}
+                        onSaved={(updated) => {
+                          setCompanies(prev =>
+                            prev.map(c => (c.id === company.id ? { ...c, ...updated } : c))
+                          );
+                        }}
+                      />
+                    </TableCell>
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center">
+                  <TableCell colSpan={6} className="h-24 text-center">
                     No companies have registered yet.
                   </TableCell>
                 </TableRow>

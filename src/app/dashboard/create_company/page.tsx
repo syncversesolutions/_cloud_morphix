@@ -117,6 +117,8 @@ export default function CompanyRegistrationForm() {
       );
       const user = userCredential.user;
 
+
+
       // 2) Create company + default roles + user docs under current (platform admin) auth
       await createCompanyAndAdmin({
         companyData: {
@@ -244,7 +246,7 @@ export default function CompanyRegistrationForm() {
                     {passwordChecks.map((check, index) => (
                       <div key={index} className="flex items-center text-sm">
                         {check.satisfied ? (
-                          <CheckCircle2 className="mr-2 h-4 w-4" />
+                          <CheckCircle2 className="mr-2 h-4 w-4 text-green-500" />
                         ) : (
                           <XCircle className="mr-2 h-4 w-4" />
                         )}

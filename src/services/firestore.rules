@@ -7,64 +7,112 @@ service cloud.firestore {
     function isSignedIn() {
       return request.auth != null;
     }
+
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
+
     function lookupPath(uid) {
       return /databases/$(database)/documents/user_company_lookup/$(uid);
     }
+
+    function hasLookup(uid) {
+      return exists(lookupPath(uid));
+    }
+
+    // safe getter for user's companyId ("" if not found)
+    function userCompanyId(uid) {
+      return hasLookup(uid) ? get(lookupPath(uid)).data.companyId : "";
+    }
+
     function isPlatformAdmin() {
-      return isSignedIn() &&
-        exists(lookupPath(request.auth.uid)) &&
-        get(lookupPath(request.auth.uid)).data.isPlatformAdmin == true;
+      return isSignedIn()
+        && hasLookup(request.auth.uid)
+        && get(lookupPath(request.auth.uid)).data.isPlatformAdmin == true;
     }
+
     function isUserInCompany(companyId) {
-      return isSignedIn() &&
-        exists(lookupPath(request.auth.uid)) &&
-        get(lookupPath(request.auth.uid)).data.companyId == companyId;
+      return isSignedIn()
+        && hasLookup(request.auth.uid)
+        && userCompanyId(request.auth.uid) == companyId;
     }
+
+    function companyUserDoc(companyId, uid) {
+      return /databases/$(database)/documents/companies/$(companyId)/users/$(uid);
+    }
+
+    function companyRoleDoc(companyId, roleName) {
+      return /databases/$(database)/documents/companies/$(companyId)/roles/$(roleName);
+    }
+
     function isCompanyAdmin(companyId) {
       return isUserInCompany(companyId)
-        && exists(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid))
-        && exists(/databases/$(database)/documents/companies/$(companyId)/roles/$(
-          get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role))
-        && get(/databases/$(database)/documents/companies/$(companyId)/roles/$(
-          get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role)).data.allowed_actions.manage_users == true;
+        && exists(companyUserDoc(companyId, request.auth.uid))
+        && exists(companyRoleDoc(
+             companyId,
+             get(companyUserDoc(companyId, request.auth.uid)).data.role
+           ))
+        && get(companyRoleDoc(
+             companyId,
+             get(companyUserDoc(companyId, request.auth.uid)).data.role
+           )).data.allowed_actions.manage_users == true;
     }
 
     // ---- Rules ----
     match /contacts/{contactId} {
       allow create: if true;
+
+      // read/write allowed if:
+      // - signed in AND (their company name is 'Cloud Morphix' OR platform admin)
       allow read, write: if isSignedIn() && (
-        get(/databases/$(database)/documents/companies/$(get(lookupPath(request.auth.uid)).data.companyId)).data.company_name == 'Cloud Morphix'
-        || isPlatformAdmin()
+        isPlatformAdmin() ||
+        (
+          hasLookup(request.auth.uid) &&
+          userCompanyId(request.auth.uid) != "" &&
+          exists(/databases/$(database)/documents/companies/$(userCompanyId(request.auth.uid))) &&
+          get(/databases/$(database)/documents/companies/$(userCompanyId(request.auth.uid))).data.company_name == 'Cloud Morphix'
+        )
       );
     }
 
     match /user_company_lookup/{userId} {
+      // allow read for: itself, platform admin, or company admins of their own company
       allow read: if isSignedIn() && (
-        request.auth.uid == userId 
+        request.auth.uid == userId
         || isPlatformAdmin()
         || (
-          exists(/databases/$(database)/documents/companies/$(get(lookupPath(request.auth.uid)).data.companyId)/users/$(request.auth.uid))
-          && exists(/databases/$(database)/documents/companies/$(get(lookupPath(request.auth.uid)).data.companyId)/roles/$(
-            get(/databases/$(database)/documents/companies/$(get(lookupPath(request.auth.uid)).data.companyId)/users/$(request.auth.uid)).data.role
-          ))
-          && get(/databases/$(database)/documents/companies/$(get(lookupPath(request.auth.uid)).data.companyId)/roles/$(
-            get(/databases/$(database)/documents/companies/$(get(lookupPath(request.auth.uid)).data.companyId)/users/$(request.auth.uid)).data.role
+          hasLookup(request.auth.uid) &&
+          userCompanyId(request.auth.uid) != "" &&
+          exists(companyUserDoc(userCompanyId(request.auth.uid), request.auth.uid)) &&
+          exists(companyRoleDoc(
+            userCompanyId(request.auth.uid),
+            get(companyUserDoc(userCompanyId(request.auth.uid), request.auth.uid)).data.role
+          )) &&
+          get(companyRoleDoc(
+            userCompanyId(request.auth.uid),
+            get(companyUserDoc(userCompanyId(request.auth.uid), request.auth.uid)).data.role
           )).data.allowed_actions.manage_users == true
         )
       );
+
+      // create guarded by platform admin OR company admin of the target company
       allow create: if isPlatformAdmin() || isCompanyAdmin(request.resource.data.companyId);
+
       allow update: if false;
+
+      // delete allowed to platform admin, or company admin of the target user's company
       allow delete: if isPlatformAdmin() || (
-        exists(lookupPath(userId)) && isCompanyAdmin(get(lookupPath(userId)).data.companyId)
+        exists(lookupPath(userId)) &&
+        isCompanyAdmin(get(lookupPath(userId)).data.companyId)
       );
     }
 
     match /companies/{companyId} {
       allow read: if isUserInCompany(companyId) || isPlatformAdmin();
       allow create: if isPlatformAdmin();
+      allow update: if isPlatformAdmin();
+      // this "write:false" doesn't block specific allows (rules are ORed),
+      // but it's redundant—keeping it for your current structure:
       allow write: if false;
 
       match /users/{userId} {

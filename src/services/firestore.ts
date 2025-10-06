@@ -29,12 +29,18 @@ export interface Company {
     id: string;
     company_name: string;
     industry: string;
-    domoUrl?: string;  // Added domo_url field here
+    domoUrl?: string;
     subscription_plan: 'Trial' | 'Basic' | 'Enterprise';
     is_active: boolean;
-    created_at: Timestamp;
+    created_at: Timestamp;          // as-is
     plan_expiry_date?: any;
-}
+  
+    // 👉 ADD THESE (optional but recommended)
+    adminFullName?: string | null;
+    adminEmail?: string | null;
+    adminUid?: string | null;       // admin user subdoc ko update karne me kaam ayega
+  }
+  
 
 // This is defined here to be the single source of truth for user creation validation.
 export const addUserFormSchema = z.object({
@@ -164,6 +170,76 @@ interface AdminData {
     fullName: string;
 }
 
+// keep at top of file:
+type CompanyEditablePatch = {
+    domoUrl?: string;
+    industry?: string;
+    subscription_plan?: "Trial" | "Basic" | "Enterprise";
+    is_active?: boolean;
+  };
+  
+  function pickDefined<T extends object>(obj: T): Partial<T> {
+    const out: any = {};
+    Object.keys(obj).forEach(k => {
+      const v = (obj as any)[k];
+      if (v !== undefined) out[k] = v;
+    });
+    return out;
+  }
+  
+  export async function updateCompanyAndAdminDomoUrl(
+    companyId: string,
+    patch: CompanyEditablePatch
+  ) {
+    const companyRef = doc(db, "companies", companyId);
+  
+    // 1) update only allowed fields
+    const updateData = {
+      ...pickDefined({
+        domoUrl: patch.domoUrl,
+        industry: patch.industry,
+        subscription_plan: patch.subscription_plan,
+        is_active: patch.is_active,
+      }),
+      updated_at: serverTimestamp(),
+    };
+    await updateDoc(companyRef, updateData);
+  
+    // 2) sync admin subdoc only if domoUrl provided
+    let adminUid: string | undefined;
+    if (typeof patch.domoUrl === "string") {
+      const companySnap = await getDoc(companyRef);
+      const data = companySnap.data() || {};
+      adminUid = data.adminUid;
+  
+      if (!adminUid) {
+        const rolesSnap = await getDocs(collection(db, `companies/${companyId}/roles`));
+        const adminRoles = new Set<string>();
+        rolesSnap.forEach(r => {
+          const d = r.data();
+          if (d?.allowed_actions?.manage_users === true) adminRoles.add(r.id);
+        });
+        const usersSnap = await getDocs(collection(db, `companies/${companyId}/users`));
+        usersSnap.forEach(u => {
+          const d = u.data();
+          if (!adminUid && d?.role && adminRoles.has(d.role)) adminUid = u.id;
+        });
+      }
+  
+      if (adminUid) {
+        await setDoc(
+          doc(db, `companies/${companyId}/users/${adminUid}`),
+          { domoUrl: patch.domoUrl, updated_at: serverTimestamp() },
+          { merge: true }
+        );
+        return { ok: true, adminUpdated: true, adminUid };
+      }
+    }
+  
+    return { ok: true, adminUpdated: false };
+  }
+  
+
 export async function createCompanyAndAdmin({ companyData, adminData, isPlatformAdminFlag = false }: { companyData: CompanyData, adminData: AdminData, isPlatformAdminFlag?: boolean }): Promise<void> {
     const companyRef = doc(collection(db, "companies"));
     const userRef = doc(db, "companies", companyRef.id, "users", adminData.uid);
@@ -180,6 +256,10 @@ export async function createCompanyAndAdmin({ companyData, adminData, isPlatform
         is_active: true,
         created_at: serverTimestamp(),
         plan_expiry_date: null,
+          // 👉 ADD THESE
+        adminFullName: adminData.fullName || null,
+        adminEmail: adminData.email || null,
+        adminUid: adminData.uid || null,
     });
 
     // Set default roles for the new company

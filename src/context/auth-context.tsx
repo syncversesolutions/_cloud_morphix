@@ -1,4 +1,3 @@
-
 "use client";
 
 import type { User } from "firebase/auth";
@@ -30,47 +29,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
 
   const fetchProfile = useCallback(async (currentUser: User | null) => {
-    if (currentUser) {
-      try {
-        const profile = await getUserProfile(currentUser.uid);
-        console.log("Fetched profile:", profile);
-        setUserProfile(profile);
-        // The source of truth is now the profile itself.
-        setIsPlatformAdmin(profile?.isPlatformAdmin ?? false);
-      } catch (error) {
-        console.error("Failed to fetch user profile:", error);
-        setUserProfile(null);
-        setIsPlatformAdmin(false);
-      }
-    } else {
+    if (!currentUser) {
+      setUserProfile(null);
+      setIsPlatformAdmin(false);
+      return;
+    }
+    try {
+      const profile = await getUserProfile(currentUser.uid);
+      setUserProfile(profile);
+      setIsPlatformAdmin(profile?.isPlatformAdmin ?? false);
+    } catch (error) {
+      console.error("Failed to fetch user profile:", error);
       setUserProfile(null);
       setIsPlatformAdmin(false);
     }
-    // Set loading to false only after all async operations are done.
-    setLoading(false);
   }, []);
 
   useEffect(() => {
+    setLoading(true);
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      // Reset state and start loading when auth state changes
-      setLoading(true);
       setUser(user);
-      fetchProfile(user);
+      fetchProfile(user).finally(() => setLoading(false));
     });
-
     return () => unsubscribe();
   }, [fetchProfile]);
-  
+
   const refreshUserProfile = async () => {
     setLoading(true);
     await fetchProfile(user);
     setLoading(false);
   };
 
-  const value = { user, userProfile, loading, isPlatformAdmin, refreshUserProfile };
-
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={{ user, userProfile, loading, isPlatformAdmin, refreshUserProfile }}>
       {children}
     </AuthContext.Provider>
   );

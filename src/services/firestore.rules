@@ -7,67 +7,59 @@ service cloud.firestore {
     function isSignedIn() {
       return request.auth != null;
     }
-
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
-
     function lookupPath(uid) {
       return /databases/$(database)/documents/user_company_lookup/$(uid);
     }
-
     function isPlatformAdmin() {
       return isSignedIn() &&
         exists(lookupPath(request.auth.uid)) &&
         get(lookupPath(request.auth.uid)).data.isPlatformAdmin == true;
     }
-
     function isUserInCompany(companyId) {
       return isSignedIn() &&
         exists(lookupPath(request.auth.uid)) &&
         get(lookupPath(request.auth.uid)).data.companyId == companyId;
     }
-
     function isCompanyAdmin(companyId) {
-      return
-        isUserInCompany(companyId) &&
-        exists(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)) &&
-        exists(
-          /databases/$(database)/documents/companies/$(companyId)/roles/$(
-            get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role
-          )
-        ) &&
-        get(
-          /databases/$(database)/documents/companies/$(companyId)/roles/$(
-            get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role
-          )
-        ).data.allowed_actions.manage_users == true;
+      return isUserInCompany(companyId)
+        && exists(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid))
+        && exists(/databases/$(database)/documents/companies/$(companyId)/roles/$(
+          get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role))
+        && get(/databases/$(database)/documents/companies/$(companyId)/roles/$(
+          get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data.role)).data.allowed_actions.manage_users == true;
     }
 
     // ---- Rules ----
     match /contacts/{contactId} {
       allow create: if true;
       allow read, write: if isSignedIn() && (
-      get(/databases/$(database)/documents/companies/$(get(lookupPath(request.auth.uid)).data.companyId)).data.company_name == 'Cloud Morphix'
-      || isPlatformAdmin()
+        get(/databases/$(database)/documents/companies/$(get(lookupPath(request.auth.uid)).data.companyId)).data.company_name == 'Cloud Morphix'
+        || isPlatformAdmin()
       );
     }
 
     match /user_company_lookup/{userId} {
       allow read: if isSignedIn() && (
-        request.auth.uid == userId ||
-        isPlatformAdmin() ||
-        isCompanyAdmin(resource.data.companyId)
+        request.auth.uid == userId 
+        || isPlatformAdmin()
+        || (
+          exists(/databases/$(database)/documents/companies/$(get(lookupPath(request.auth.uid)).data.companyId)/users/$(request.auth.uid))
+          && exists(/databases/$(database)/documents/companies/$(get(lookupPath(request.auth.uid)).data.companyId)/roles/$(
+            get(/databases/$(database)/documents/companies/$(get(lookupPath(request.auth.uid)).data.companyId)/users/$(request.auth.uid)).data.role
+          ))
+          && get(/databases/$(database)/documents/companies/$(get(lookupPath(request.auth.uid)).data.companyId)/roles/$(
+            get(/databases/$(database)/documents/companies/$(get(lookupPath(request.auth.uid)).data.companyId)/users/$(request.auth.uid)).data.role
+          )).data.allowed_actions.manage_users == true
+        )
       );
-
       allow create: if isPlatformAdmin() || isCompanyAdmin(request.resource.data.companyId);
-
       allow update: if false;
-
-      // allow delete if Platform Admin OR admin of that user's company
-      allow delete: if isPlatformAdmin() ||
-        (exists(lookupPath(userId)) &&
-         isCompanyAdmin(get(lookupPath(userId)).data.companyId));
+      allow delete: if isPlatformAdmin() || (
+        exists(lookupPath(userId)) && isCompanyAdmin(get(lookupPath(userId)).data.companyId)
+      );
     }
 
     match /companies/{companyId} {
@@ -77,12 +69,9 @@ service cloud.firestore {
 
       match /users/{userId} {
         allow read: if isUserInCompany(companyId);
-        allow create: if isOwner(userId);
+        allow create: if isOwner(userId) || isCompanyAdmin(companyId) || isPlatformAdmin();
         allow update: if isOwner(userId) || isCompanyAdmin(companyId) || isPlatformAdmin();
-        // ✅ only company admin OR platform admin can delete a user
         allow delete: if isCompanyAdmin(companyId) || isPlatformAdmin();
-        // (Optional) block users from deleting themself:
-        // allow delete: if (isCompanyAdmin(companyId) || isPlatformAdmin()) && request.auth.uid != userId;
       }
 
       match /roles/{roleName} {

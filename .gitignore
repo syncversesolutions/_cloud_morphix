@@ -9,9 +9,15 @@
 # testing
 /coverage
 
+# firebase
+.firebase/
+firebase.json
+.firebaserc
+
 # next.js
 /.next/
 /out/
+public/
 
 # production
 /build

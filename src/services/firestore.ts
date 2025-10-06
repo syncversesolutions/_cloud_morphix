@@ -92,8 +92,14 @@ async function createAuditLog(companyId: string, actor: Actor, message: string) 
 
 // Re-fetches the user profile and merges it with their role's permissions.
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
+    
+    console.log("before Doc");
+
     const lookupRef = doc(db, "user_company_lookup", uid);
+    console.log("inside mid");
     const lookupSnap = await getDoc(lookupRef);
+
+    console.log("after getDoc");
 
     if (!lookupSnap.exists()) {
         console.log("No company lookup found for user:", uid);
